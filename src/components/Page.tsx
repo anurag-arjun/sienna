@@ -23,8 +23,13 @@ export function Page({ ready }: { ready: boolean }) {
   const [activeNoteId, setActiveNoteId] = useState<string | undefined>();
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  const onConversationError = useCallback(
+    (err: string) => console.error("Conversation error:", err),
+    [],
+  );
+
   const conversation = useConversation({
-    onError: (err) => console.error("Conversation error:", err),
+    onError: onConversationError,
   });
 
   const handleEditorChange = useCallback((content: string) => {
@@ -39,17 +44,24 @@ export function Page({ ready }: { ready: boolean }) {
     }
   }, [mode, conversation.messages, conversation.streamingContent]);
 
-  // Connect session when entering conversation mode
+  // Connect session when entering conversation mode.
+  // conversation.connect and conversation.sessionId accessed via refs
+  // to keep this callback stable.
+  const sessionIdRef = useRef(conversation.sessionId);
+  sessionIdRef.current = conversation.sessionId;
+  const connectRef = useRef(conversation.connect);
+  connectRef.current = conversation.connect;
+
   const handleSwitchToConversation = useCallback(async () => {
     setMode("conversation");
-    if (!conversation.sessionId) {
+    if (!sessionIdRef.current) {
       try {
-        await conversation.connect();
+        await connectRef.current();
       } catch {
         // Error is set in hook state
       }
     }
-  }, [conversation]);
+  }, []);
 
   // Cmd+J toggles mode, Cmd+O toggles library
   useEffect(() => {
@@ -70,6 +82,9 @@ export function Page({ ready }: { ready: boolean }) {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [mode, handleSwitchToConversation]);
+
+  const handleOpenLibrary = useCallback(() => setLibraryOpen(true), []);
+  const handleCloseLibrary = useCallback(() => setLibraryOpen(false), []);
 
   const handleSelectNote = useCallback((note: Note) => {
     setActiveNoteId(note.id);
@@ -146,7 +161,7 @@ export function Page({ ready }: { ready: boolean }) {
       {/* Mode indicator + Context tray */}
       <div className="h-6 flex items-center justify-center gap-3">
         <button
-          onClick={() => setLibraryOpen(true)}
+          onClick={handleOpenLibrary}
           className="text-text-tertiary text-[10px] opacity-40 hover:opacity-70 transition-opacity cursor-pointer select-none"
           title="Library (Ctrl+O)"
         >
@@ -170,7 +185,7 @@ export function Page({ ready }: { ready: boolean }) {
       {/* Library panel */}
       <LibraryPanel
         open={libraryOpen}
-        onClose={() => setLibraryOpen(false)}
+        onClose={handleCloseLibrary}
         onSelectNote={handleSelectNote}
         activeNoteId={activeNoteId}
       />

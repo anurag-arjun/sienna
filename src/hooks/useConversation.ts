@@ -44,6 +44,9 @@ export interface UseConversationReturn {
 
 /**
  * Hook for managing a conversation with a pi agent session.
+ *
+ * Uses refs for option callbacks and session ID to keep all callbacks
+ * referentially stable and avoid re-render cascades.
  */
 export function useConversation(
   options: UseConversationOptions = {},
@@ -54,10 +57,24 @@ export function useConversation(
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Use ref for streaming content accumulation to avoid stale closures
+  // Refs for stable callback access (avoids dependency chains)
   const streamingRef = useRef("");
   const messageIdCounter = useRef(0);
   const unlistenRef = useRef<(() => void) | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
+  const onErrorRef = useRef(options.onError);
+  const sessionOptionsRef = useRef(options.sessionOptions);
+
+  // Keep refs in sync
+  useEffect(() => {
+    onErrorRef.current = options.onError;
+  }, [options.onError]);
+  useEffect(() => {
+    sessionOptionsRef.current = options.sessionOptions;
+  }, [options.sessionOptions]);
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
 
   // Generate a unique message ID
   const nextMessageId = useCallback(() => {
@@ -65,7 +82,7 @@ export function useConversation(
     return `msg-${messageIdCounter.current}`;
   }, []);
 
-  // Handle incoming pi events
+  // Handle incoming pi events — stable, no deps on options
   const handleEvent = useCallback(
     (event: PiEvent) => {
       switch (event.type) {
@@ -103,7 +120,7 @@ export function useConversation(
 
           if (event.error) {
             setError(event.error);
-            options.onError?.(event.error);
+            onErrorRef.current?.(event.error);
           }
           break;
         }
@@ -111,7 +128,7 @@ export function useConversation(
         case "error":
           setError(event.message);
           setStreaming(false);
-          options.onError?.(event.message);
+          onErrorRef.current?.(event.message);
           break;
 
         default:
@@ -119,14 +136,14 @@ export function useConversation(
           break;
       }
     },
-    [nextMessageId, options],
+    [nextMessageId],
   );
 
-  // Connect to a session
+  // Connect to a session — stable
   const connect = useCallback(
     async (connectOptions?: CreateSessionRequest) => {
       try {
-        const opts = connectOptions ?? options.sessionOptions ?? {};
+        const opts = connectOptions ?? sessionOptionsRef.current ?? {};
         const sid = await piApi.createSession(opts);
         setSessionId(sid);
         setError(null);
@@ -142,13 +159,14 @@ export function useConversation(
         throw err;
       }
     },
-    [handleEvent, options.sessionOptions],
+    [handleEvent],
   );
 
-  // Send a message
+  // Send a message — uses ref for sessionId
   const send = useCallback(
     async (text: string) => {
-      if (!sessionId) {
+      const sid = sessionIdRef.current;
+      if (!sid) {
         setError("No active session");
         return;
       }
@@ -162,35 +180,34 @@ export function useConversation(
       setError(null);
 
       try {
-        await piApi.prompt(sessionId, text.trim());
+        await piApi.prompt(sid, text.trim());
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         setError(msg);
-        options.onError?.(msg);
+        onErrorRef.current?.(msg);
       }
     },
-    [sessionId, nextMessageId, options],
+    [nextMessageId],
   );
 
-  // Steer the current generation
-  const steerFn = useCallback(
-    async (text: string) => {
-      if (!sessionId) return;
-      try {
-        await piApi.steer(sessionId, text);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        setError(msg);
-      }
-    },
-    [sessionId],
-  );
-
-  // Abort the current generation
-  const abortFn = useCallback(async () => {
-    if (!sessionId) return;
+  // Steer the current generation — stable
+  const steer = useCallback(async (text: string) => {
+    const sid = sessionIdRef.current;
+    if (!sid) return;
     try {
-      await piApi.abort(sessionId);
+      await piApi.steer(sid, text);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg);
+    }
+  }, []);
+
+  // Abort the current generation — stable
+  const abort = useCallback(async () => {
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    try {
+      await piApi.abort(sid);
       setStreaming(false);
 
       // Preserve any partial content
@@ -210,23 +227,24 @@ export function useConversation(
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg);
     }
-  }, [sessionId, nextMessageId]);
+  }, [nextMessageId]);
 
-  // Disconnect
+  // Disconnect — stable
   const disconnect = useCallback(async () => {
     if (unlistenRef.current) {
       unlistenRef.current();
       unlistenRef.current = null;
     }
-    if (sessionId) {
+    const sid = sessionIdRef.current;
+    if (sid) {
       try {
-        await piApi.destroySession(sessionId);
+        await piApi.destroySession(sid);
       } catch {
         // Ignore cleanup errors
       }
       setSessionId(null);
     }
-  }, [sessionId]);
+  }, []);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -243,8 +261,8 @@ export function useConversation(
     streamingContent,
     sessionId,
     send,
-    steer: steerFn,
-    abort: abortFn,
+    steer,
+    abort,
     connect,
     disconnect,
     error,
