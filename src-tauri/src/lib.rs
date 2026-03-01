@@ -1,11 +1,17 @@
+mod agent;
 mod db;
 
+use agent::bridge::PiBridge;
+use agent::types::{CreateSessionRequest, SessionState};
 use db::store::{self, CreateNote, Note, NoteFilter, NoteLink, Tag, UpdateNote};
+use std::collections::HashMap;
 use std::sync::Mutex;
-use tauri::{Manager, State};
-
+use tauri::{Emitter, Manager, State};
 struct AppState {
     db: Mutex<rusqlite::Connection>,
+    pi: PiBridge,
+    /// Active event forwarders (session_id → abort sender to stop forwarding)
+    event_forwarders: Mutex<HashMap<String, tokio::sync::oneshot::Sender<()>>>,
 }
 
 // ── IPC Commands ───────────────────────────────────────────────────────
@@ -69,6 +75,104 @@ fn get_note_links(state: State<'_, AppState>, note_id: String) -> Result<Vec<Not
     store::get_note_links(&conn, &note_id)
 }
 
+// ── Pi Agent Commands ──────────────────────────────────────────────────
+
+#[tauri::command]
+async fn pi_create_session(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    request: CreateSessionRequest,
+) -> Result<String, String> {
+    let (session_id, mut event_rx) = state.pi.create_session(request).await?;
+
+    // Spawn a tokio task to forward pi events to the Tauri webview
+    let app_handle = app.clone();
+    let sid = session_id.clone();
+    let (stop_tx, mut stop_rx) = tokio::sync::oneshot::channel::<()>();
+
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::select! {
+                event = event_rx.recv() => {
+                    match event {
+                        Some(pi_event) => {
+                            let _ = app_handle.emit("pi-event", &pi_event);
+                        }
+                        None => break,
+                    }
+                }
+                _ = &mut stop_rx => break,
+            }
+        }
+    });
+
+    state
+        .event_forwarders
+        .lock()
+        .unwrap()
+        .insert(session_id.clone(), stop_tx);
+
+    Ok(sid)
+}
+
+#[tauri::command]
+async fn pi_prompt(
+    state: State<'_, AppState>,
+    session_id: String,
+    message: String,
+) -> Result<(), String> {
+    state.pi.prompt(session_id, message).await
+}
+
+#[tauri::command]
+async fn pi_steer(
+    state: State<'_, AppState>,
+    session_id: String,
+    message: String,
+) -> Result<(), String> {
+    state.pi.steer(session_id, message).await
+}
+
+#[tauri::command]
+async fn pi_abort(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
+    state.pi.abort(session_id).await
+}
+
+#[tauri::command]
+async fn pi_get_state(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<SessionState, String> {
+    state.pi.get_state(session_id).await
+}
+
+#[tauri::command]
+async fn pi_set_model(
+    state: State<'_, AppState>,
+    session_id: String,
+    provider: String,
+    model_id: String,
+) -> Result<(), String> {
+    state.pi.set_model(session_id, provider, model_id).await
+}
+
+#[tauri::command]
+async fn pi_destroy_session(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<(), String> {
+    // Stop event forwarding
+    if let Some(stop_tx) = state
+        .event_forwarders
+        .lock()
+        .unwrap()
+        .remove(&session_id)
+    {
+        let _ = stop_tx.send(());
+    }
+    state.pi.destroy_session(session_id).await
+}
+
 // ── App Entry ──────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -96,8 +200,12 @@ pub fn run() {
             let conn = db::init_db(&db_path)
                 .map_err(|e| e.to_string())?;
 
+            let pi_bridge = PiBridge::new();
+
             handle.manage(AppState {
                 db: Mutex::new(conn),
+                pi: pi_bridge,
+                event_forwarders: Mutex::new(HashMap::new()),
             });
 
             Ok(())
@@ -113,6 +221,13 @@ pub fn run() {
             set_note_tags,
             add_note_link,
             get_note_links,
+            pi_create_session,
+            pi_prompt,
+            pi_steer,
+            pi_abort,
+            pi_get_state,
+            pi_set_model,
+            pi_destroy_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
