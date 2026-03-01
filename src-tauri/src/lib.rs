@@ -1,5 +1,6 @@
 mod agent;
 mod db;
+mod import;
 
 use agent::bridge::PiBridge;
 use agent::types::{CreateSessionRequest, SessionState};
@@ -146,6 +147,31 @@ async fn get_file_meta(path: String) -> Result<FileMeta, String> {
         size: metadata.len(),
         is_dir: metadata.is_dir(),
     })
+}
+
+// ── Import Commands ────────────────────────────────────────────────────
+
+#[tauri::command]
+async fn import_claude_export(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    file_path: String,
+) -> Result<import::ImportResult, String> {
+    let json = tokio::fs::read_to_string(&file_path)
+        .await
+        .map_err(|e| format!("Cannot read file: {e}"))?;
+
+    let conversations = import::parse_claude_export(&json)?;
+
+    let app_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let session_dir = app_dir.join("sessions").join("claude-import");
+
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    Ok(import::import_claude_conversations(
+        &conn,
+        &conversations,
+        &session_dir,
+    ))
 }
 
 // ── Pi Agent Commands ──────────────────────────────────────────────────
@@ -301,6 +327,7 @@ pub fn run() {
             reorder_note_context,
             read_file_content,
             get_file_meta,
+            import_claude_export,
             pi_create_session,
             pi_prompt,
             pi_steer,
