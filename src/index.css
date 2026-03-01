@@ -118,6 +118,93 @@ body {
   opacity: 0.6;
 }
 
+/* Inline conversation */
+.cm-inline-conv {
+  padding: 8px 0 12px;
+  margin: 4px 0;
+}
+
+.cm-inline-conv-anchor {
+  height: 1px;
+  background: linear-gradient(90deg, var(--color-accent-warm), transparent 60%);
+  opacity: 0.4;
+  margin-bottom: 8px;
+}
+
+.cm-inline-conv-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.cm-inline-conv-msg-user {
+  color: var(--color-text-primary);
+  font-weight: 500;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.cm-inline-conv-msg-assistant {
+  color: var(--color-text-ai);
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.cm-inline-conv-streaming {
+  opacity: 0.8;
+}
+
+.cm-inline-conv-pulse {
+  color: var(--color-accent-warm);
+  font-size: 10px;
+  opacity: 0.6;
+  animation: blink 1s step-end infinite;
+}
+
+.cm-inline-conv-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-accent-warm) 30%, transparent);
+  outline: none;
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  padding: 4px 0;
+  caret-color: var(--color-accent-warm);
+  transition: border-color var(--transition-fast);
+}
+
+.cm-inline-conv-input:focus {
+  border-bottom-color: color-mix(in srgb, var(--color-accent-warm) 60%, transparent);
+}
+
+.cm-inline-conv-input::placeholder {
+  color: var(--color-text-tertiary);
+  opacity: 0.5;
+  font-style: italic;
+}
+
+/* Collapsed conversation dot */
+.cm-inline-conv-dot {
+  color: var(--color-accent-warm);
+  font-size: 8px;
+  margin-left: 8px;
+  opacity: 0.4;
+  cursor: pointer;
+  transition: opacity var(--transition-fast);
+  vertical-align: middle;
+  user-select: none;
+}
+
+.cm-inline-conv-dot:hover {
+  opacity: 0.8;
+}
+
 /* Selection */
 ::selection {
   background-color: color-mix(in srgb, var(--color-accent-warm) 30%, transparent);

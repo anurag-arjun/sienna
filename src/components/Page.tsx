@@ -1,5 +1,15 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Editor, generationField, startGeneration, insertDelta, completeGeneration } from "../editor";
+import {
+  Editor,
+  generationField,
+  startGeneration,
+  insertDelta,
+  completeGeneration,
+  conversationField,
+  startStreaming,
+  streamDelta,
+  completeStreaming,
+} from "../editor";
 import type { EditorView } from "@codemirror/view";
 import { Conversation } from "./Conversation";
 import { ChatInput } from "./ChatInput";
@@ -44,6 +54,9 @@ export function Page({ ready }: { ready: boolean }) {
   const contentRef = useRef(""); // tracks current editor content for save
   const inlineSessionRef = useRef<string | null>(null);
   const inlineUnlistenRef = useRef<(() => void) | null>(null);
+
+  // Inline conversation sessions — one pi session per inline conversation
+  const inlineConvSessionsRef = useRef<Map<string, { sessionId: string; unlisten: () => void }>>(new Map());
 
   const onConversationError = useCallback(
     (err: string) => console.error("Conversation error:", err),
@@ -102,6 +115,12 @@ export function Page({ ready }: { ready: boolean }) {
       piApi.destroySession(inlineSessionRef.current).catch(() => {});
       inlineSessionRef.current = null;
     }
+    // Clean up inline conversation sessions
+    for (const [, sess] of inlineConvSessionsRef.current) {
+      sess.unlisten();
+      piApi.destroySession(sess.sessionId).catch(() => {});
+    }
+    inlineConvSessionsRef.current.clear();
 
     if (!activeNoteId) {
       setLoadedContent("");
@@ -151,6 +170,62 @@ export function Page({ ready }: { ready: boolean }) {
     },
     [],
   );
+
+  // ── Inline conversation (Ctrl+Return Q&A in document) ──────────
+  const handleInlineConvSend = useCallback(async (conversationId: string, text: string) => {
+    const view = editorViewRef.current;
+    if (!view) return;
+
+    try {
+      let sess = inlineConvSessionsRef.current.get(conversationId);
+
+      if (!sess) {
+        // Create a new pi session for this inline conversation
+        const sessionId = await piApi.createSession({
+          system_prompt: "You are a helpful writing assistant. Answer questions concisely and clearly. The user is asking about the document they are writing.",
+          no_session: true,
+        });
+
+        // Subscribe to streaming events
+        const unlisten = await piApi.onSessionEvent(sessionId, (event: PiEvent) => {
+          const v = editorViewRef.current;
+          if (!v) return;
+
+          if (event.type === "text_delta") {
+            v.dispatch({
+              effects: streamDelta.of({ id: conversationId, delta: event.delta }),
+            });
+          } else if (event.type === "agent_end") {
+            v.dispatch({
+              effects: completeStreaming.of({ id: conversationId }),
+            });
+          }
+        });
+
+        sess = { sessionId, unlisten };
+        inlineConvSessionsRef.current.set(conversationId, sess);
+      }
+
+      // Mark as streaming
+      view.dispatch({
+        effects: startStreaming.of({ id: conversationId }),
+      });
+
+      // Send the message
+      await piApi.prompt(sess.sessionId, text);
+    } catch (err) {
+      console.error("Inline conversation failed:", err);
+    }
+  }, []);
+
+  const handleInlineConvCollapse = useCallback((conversationId: string) => {
+    // Session stays alive for potential re-expansion
+    // Cleanup happens on note switch
+  }, []);
+
+  const handleInlineConvExpand = useCallback((_conversationId: string) => {
+    // No-op — the CM6 extension handles the state change
+  }, []);
 
   // ── Inline AI generation ─────────────────────────────────────────
   const handleInlineInvoke = useCallback(async (instruction: string, pos: number) => {
@@ -489,6 +564,9 @@ export function Page({ ready }: { ready: boolean }) {
               contentRef={editorContentRef}
               viewRef={editorViewRef}
               onInlineInvoke={handleInlineInvoke}
+              onInlineConversationSend={handleInlineConvSend}
+              onInlineConversationCollapse={handleInlineConvCollapse}
+              onInlineConversationExpand={handleInlineConvExpand}
               autoFocus
             />
           </div>

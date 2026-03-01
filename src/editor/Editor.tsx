@@ -18,6 +18,10 @@ interface EditorProps {
   viewRef?: React.MutableRefObject<EditorView | null>;
   /** Called when inline AI instruction is submitted */
   onInlineInvoke?: (instruction: string, pos: number) => void;
+  /** Inline conversation callbacks */
+  onInlineConversationSend?: (conversationId: string, text: string) => void;
+  onInlineConversationCollapse?: (conversationId: string) => void;
+  onInlineConversationExpand?: (conversationId: string) => void;
 }
 
 /**
@@ -32,6 +36,9 @@ export function Editor({
   contentRef,
   viewRef: externalViewRef,
   onInlineInvoke,
+  onInlineConversationSend,
+  onInlineConversationCollapse,
+  onInlineConversationExpand,
 }: EditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -41,6 +48,12 @@ export function Editor({
   onChangeRef.current = onChange;
   const onInlineInvokeRef = useRef(onInlineInvoke);
   onInlineInvokeRef.current = onInlineInvoke;
+  const onInlineConvSendRef = useRef(onInlineConversationSend);
+  onInlineConvSendRef.current = onInlineConversationSend;
+  const onInlineConvCollapseRef = useRef(onInlineConversationCollapse);
+  onInlineConvCollapseRef.current = onInlineConversationCollapse;
+  const onInlineConvExpandRef = useRef(onInlineConversationExpand);
+  onInlineConvExpandRef.current = onInlineConversationExpand;
 
   const stableOnChange = useCallback((content: string) => {
     onChangeRef.current?.(content);
@@ -48,6 +61,16 @@ export function Editor({
 
   const stableOnInlineInvoke = useCallback((instruction: string, pos: number) => {
     onInlineInvokeRef.current?.(instruction, pos);
+  }, []);
+
+  const stableOnInlineConvSend = useCallback((id: string, text: string) => {
+    onInlineConvSendRef.current?.(id, text);
+  }, []);
+  const stableOnInlineConvCollapse = useCallback((id: string) => {
+    onInlineConvCollapseRef.current?.(id);
+  }, []);
+  const stableOnInlineConvExpand = useCallback((id: string) => {
+    onInlineConvExpandRef.current?.(id);
   }, []);
 
   useEffect(() => {
@@ -59,6 +82,11 @@ export function Editor({
         placeholder,
         onChange: stableOnChange,
         onInlineInvoke: stableOnInlineInvoke,
+        onInlineConversation: {
+          onSend: stableOnInlineConvSend,
+          onCollapse: stableOnInlineConvCollapse,
+          onExpand: stableOnInlineConvExpand,
+        },
       }),
     });
 

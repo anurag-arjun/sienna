@@ -8,6 +8,7 @@ import { moodTheme } from "./theme";
 import { inlineMarkdownRendering } from "./inline-render";
 import { inlineInvoke, type InlineInvokeOptions } from "./inline-invoke";
 import { inlineGenerate } from "./inline-generate";
+import { inlineConversation, type InlineConversationOptions } from "./inline-conversation";
 
 /**
  * Base set of CodeMirror extensions for Mood Editor.
@@ -17,6 +18,7 @@ export function createBaseExtensions(options?: {
   placeholder?: string;
   onChange?: (content: string) => void;
   onInlineInvoke?: InlineInvokeOptions["onSubmit"];
+  onInlineConversation?: InlineConversationOptions;
 }) {
   return [
     // Markdown language with nested code block highlighting
@@ -64,6 +66,9 @@ export function createBaseExtensions(options?: {
     // Inline AI invocation (Tab at line start) + generation
     inlineInvoke({ onSubmit: options?.onInlineInvoke }),
     inlineGenerate(),
+
+    // Inline conversation (Ctrl+Return in document)
+    inlineConversation(options?.onInlineConversation),
 
     // Tab size for indentation
     EditorState.tabSize.of(2),
