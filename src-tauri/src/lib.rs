@@ -325,6 +325,20 @@ async fn github_get_pr_diff(
     Ok(github::format_pr_context(&pr))
 }
 
+#[tauri::command]
+async fn github_push_file(
+    state: State<'_, AppState>,
+    owner: String,
+    repo: String,
+    path: String,
+    branch: String,
+    content: String,
+    message: String,
+) -> Result<String, String> {
+    let pat = get_pat(&state)?;
+    github::push_file(&pat, &owner, &repo, &path, &branch, &content, &message).await
+}
+
 // ── Pi Agent Commands ──────────────────────────────────────────────────
 
 #[tauri::command]
@@ -516,6 +530,7 @@ pub fn run() {
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![
             ping,
             create_note,
@@ -552,6 +567,7 @@ pub fn run() {
             github_get_file,
             github_get_issue,
             github_get_pr_diff,
+            github_push_file,
             pi_create_session,
             pi_prompt,
             pi_steer,

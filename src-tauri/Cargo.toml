@@ -32,4 +32,6 @@ pi_agent_rust = "0.1.7"
 asupersync = { version = "=0.2.5", features = ["tls-native-roots", "sqlite"] }
 tokio = { version = "1", features = ["sync", "rt", "macros"] }
 tauri-plugin-dialog = "2.6.0"
+tauri-plugin-fs = "2"
 reqwest = { version = "0.12", features = ["json"] }
+base64 = "0.22"

@@ -282,6 +282,77 @@ pub async fn get_pr_diff(
     })
 }
 
+/// Push (create or update) a file to a GitHub repo.
+/// Returns the commit URL.
+pub async fn push_file(
+    pat: &str,
+    owner: &str,
+    repo: &str,
+    path: &str,
+    branch: &str,
+    content: &str,
+    message: &str,
+) -> Result<String, String> {
+    let c = client(pat)?;
+
+    // Check if file exists (to get its sha for updates)
+    let file_url = format!("{GITHUB_API}/repos/{owner}/{repo}/contents/{path}?ref={branch}");
+    let existing = c.get(&file_url).send().await.map_err(|e| format!("{e}"))?;
+
+    let sha = if existing.status().is_success() {
+        #[derive(Deserialize)]
+        struct Existing {
+            sha: String,
+        }
+        let ex: Existing = existing
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse existing file: {e}"))?;
+        Some(ex.sha)
+    } else {
+        None
+    };
+
+    // Base64 encode content
+    use base64::Engine;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(content.as_bytes());
+
+    // Build request body
+    let mut body = serde_json::json!({
+        "message": message,
+        "content": encoded,
+        "branch": branch,
+    });
+    if let Some(sha) = sha {
+        body["sha"] = serde_json::Value::String(sha);
+    }
+
+    let put_url = format!("{GITHUB_API}/repos/{owner}/{repo}/contents/{path}");
+    let resp = c
+        .put(&put_url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("{e}"))?;
+    check_response(resp.status(), &put_url)?;
+
+    #[derive(Deserialize)]
+    struct PushResponse {
+        commit: PushCommit,
+    }
+    #[derive(Deserialize)]
+    struct PushCommit {
+        html_url: String,
+    }
+
+    let result: PushResponse = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse push response: {e}"))?;
+
+    Ok(result.commit.html_url)
+}
+
 /// Format an issue + comments into readable context text.
 pub fn format_issue_context(issue: &GitHubIssue, comments: &[GitHubComment]) -> String {
     let mut out = format!(

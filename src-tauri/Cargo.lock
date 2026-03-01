@@ -4588,6 +4588,7 @@ name = "mood-editor"
 version = "0.1.0"
 dependencies = [
  "asupersync",
+ "base64 0.22.1",
  "chrono",
  "log",
  "pi_agent_rust",
@@ -4598,6 +4599,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
+ "tauri-plugin-fs",
  "tauri-plugin-log",
  "tempfile",
  "tokio",

@@ -26,6 +26,7 @@ import { ContextSearch } from "./ContextSearch";
 import { useContextItems } from "../hooks/useContextItems";
 import { useContextSets } from "../hooks/useContextSets";
 import { ModelPicker } from "./ModelPicker";
+import { ShipSheet } from "./ShipSheet";
 import type { ModelInfo } from "../lib/models";
 
 export type PageMode = "document" | "conversation";
@@ -48,6 +49,7 @@ export function Page({ ready }: { ready: boolean }) {
   const [loadedContent, setLoadedContent] = useState("");
   const [editorKey, setEditorKey] = useState(0);
   const [trayOpen, setTrayOpen] = useState(false);
+  const [shipOpen, setShipOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const editorContentRef = useRef<(() => string) | null>(null);
   const editorViewRef = useRef<EditorView | null>(null);
@@ -363,6 +365,10 @@ export function Page({ ready }: { ready: boolean }) {
         e.preventDefault();
         handleNewNote();
       }
+      if (e.key === "e" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setShipOpen((prev) => !prev);
+      }
       if (e.key === "b" && (e.metaKey || e.ctrlKey) && mode === "conversation") {
         e.preventDefault();
         // Fork from the last assistant message
@@ -652,6 +658,15 @@ export function Page({ ready }: { ready: boolean }) {
         />
         <ContextBadge count={context.count} onClick={() => setTrayOpen(true)} />
       </div>
+
+      {/* Ship sheet */}
+      <ShipSheet
+        open={shipOpen}
+        onClose={() => setShipOpen(false)}
+        content={contentRef.current}
+        title={contentRef.current.split("\n")[0].replace(/^#\S*\s*/, "").trim().slice(0, 80) || "Untitled"}
+        tag={noteMode.tag}
+      />
 
       {/* Library panel */}
       <LibraryPanel

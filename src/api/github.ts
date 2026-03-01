@@ -80,6 +80,18 @@ export async function getPrDiff(
   return invoke<string>("github_get_pr_diff", { owner, repo, number });
 }
 
+/** Push (create or update) a file to a repo. Returns the commit URL. */
+export async function pushFile(
+  owner: string,
+  repo: string,
+  path: string,
+  branch: string,
+  content: string,
+  message: string,
+): Promise<string> {
+  return invoke<string>("github_push_file", { owner, repo, path, branch, content, message });
+}
+
 export const githubApi = {
   setPat,
   getPat,
@@ -89,4 +101,5 @@ export const githubApi = {
   getFile,
   getIssue,
   getPrDiff,
+  pushFile,
 };
