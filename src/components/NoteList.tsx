@@ -7,6 +7,8 @@ interface NoteListProps {
   selectedId?: string;
   /** Called when a note is selected */
   onSelect: (note: Note) => void;
+  /** Called when a tag chip is clicked (filters by tag) */
+  onTagClick?: (tag: string) => void;
   /** Whether the list is loading */
   loading?: boolean;
 }
@@ -21,6 +23,7 @@ export function NoteList({
   notes,
   selectedId,
   onSelect,
+  onTagClick,
   loading = false,
 }: NoteListProps) {
   if (loading) {
@@ -51,6 +54,7 @@ export function NoteList({
           note={note}
           selected={note.id === selectedId}
           onSelect={onSelect}
+          onTagClick={onTagClick}
         />
       ))}
     </div>
@@ -63,9 +67,10 @@ interface NoteItemProps {
   note: Note;
   selected: boolean;
   onSelect: (note: Note) => void;
+  onTagClick?: (tag: string) => void;
 }
 
-function NoteItem({ note, selected, onSelect }: NoteItemProps) {
+function NoteItem({ note, selected, onSelect, onTagClick }: NoteItemProps) {
   const excerpt = useMemo(() => getExcerpt(note), [note]);
   const relDate = useMemo(() => relativeDate(note.updated_at), [note.updated_at]);
 
@@ -116,7 +121,19 @@ function NoteItem({ note, selected, onSelect }: NoteItemProps) {
             {note.tags.map((tag) => (
               <span
                 key={tag}
-                className="text-[10px] text-accent-warm/70 bg-accent-warm/10 px-1.5 py-0 rounded"
+                role={onTagClick ? "button" : undefined}
+                onClick={
+                  onTagClick
+                    ? (e) => {
+                        e.stopPropagation();
+                        onTagClick(tag);
+                      }
+                    : undefined
+                }
+                className={`text-[10px] text-accent-warm/70 bg-accent-warm/10 px-1.5 py-0 rounded ${
+                  onTagClick ? "cursor-pointer hover:bg-accent-warm/20" : ""
+                }`}
+                data-testid="tag-chip"
               >
                 {tag}
               </span>

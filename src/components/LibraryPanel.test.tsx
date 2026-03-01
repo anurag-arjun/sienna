@@ -63,11 +63,7 @@ describe("LibraryPanel", () => {
 
   it("is hidden when closed", () => {
     render(
-      <LibraryPanel
-        open={false}
-        onClose={vi.fn()}
-        onSelectNote={vi.fn()}
-      />,
+      <LibraryPanel open={false} onClose={vi.fn()} onSelectNote={vi.fn()} />,
     );
     const panel = screen.getByTestId("library-panel");
     expect(panel.className).toContain("-translate-x-full");
@@ -81,12 +77,14 @@ describe("LibraryPanel", () => {
     expect(panel.className).toContain("translate-x-0");
   });
 
-  it("fetches notes when opened", async () => {
+  it("fetches active notes by default when opened", async () => {
     render(
       <LibraryPanel open={true} onClose={vi.fn()} onSelectNote={vi.fn()} />,
     );
     await waitFor(() => {
-      expect(mockListNotes).toHaveBeenCalledWith({ limit: 100 });
+      expect(mockListNotes).toHaveBeenCalledWith(
+        expect.objectContaining({ status: "active", limit: 100 }),
+      );
     });
   });
 
@@ -133,11 +131,7 @@ describe("LibraryPanel", () => {
     const onSelect = vi.fn();
     const onClose = vi.fn();
     render(
-      <LibraryPanel
-        open={true}
-        onClose={onClose}
-        onSelectNote={onSelect}
-      />,
+      <LibraryPanel open={true} onClose={onClose} onSelectNote={onSelect} />,
     );
     await waitFor(() => {
       expect(screen.getByText("My Document")).toBeTruthy();
@@ -152,5 +146,107 @@ describe("LibraryPanel", () => {
       <LibraryPanel open={true} onClose={vi.fn()} onSelectNote={vi.fn()} />,
     );
     expect(screen.getByText("Library")).toBeTruthy();
+  });
+
+  it("has a search input", () => {
+    render(
+      <LibraryPanel open={true} onClose={vi.fn()} onSelectNote={vi.fn()} />,
+    );
+    expect(screen.getByTestId("library-search")).toBeTruthy();
+  });
+
+  it("passes search query as FTS filter", async () => {
+    vi.useFakeTimers();
+    render(
+      <LibraryPanel open={true} onClose={vi.fn()} onSelectNote={vi.fn()} />,
+    );
+
+    const input = screen.getByTestId("library-search");
+    await act(async () => {
+      fireEvent.change(input, { target: { value: "rust" } });
+    });
+
+    // Advance past debounce
+    await act(async () => {
+      vi.advanceTimersByTime(100);
+    });
+
+    expect(mockListNotes).toHaveBeenCalledWith(
+      expect.objectContaining({ search: "rust", status: "active" }),
+    );
+    vi.useRealTimers();
+  });
+
+  it("passes tag qualifier to filter", async () => {
+    vi.useFakeTimers();
+    render(
+      <LibraryPanel open={true} onClose={vi.fn()} onSelectNote={vi.fn()} />,
+    );
+
+    const input = screen.getByTestId("library-search");
+    await act(async () => {
+      fireEvent.change(input, { target: { value: "tag:plan" } });
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(100);
+    });
+
+    expect(mockListNotes).toHaveBeenCalledWith(
+      expect.objectContaining({ tag: "plan", status: "active" }),
+    );
+    vi.useRealTimers();
+  });
+
+  it("shows clear button when query is active", async () => {
+    render(
+      <LibraryPanel open={true} onClose={vi.fn()} onSelectNote={vi.fn()} />,
+    );
+
+    const input = screen.getByTestId("library-search");
+    await act(async () => {
+      fireEvent.change(input, { target: { value: "hello" } });
+    });
+
+    expect(screen.getByTestId("library-clear-search")).toBeTruthy();
+  });
+
+  it("clears search on clear button click", async () => {
+    render(
+      <LibraryPanel open={true} onClose={vi.fn()} onSelectNote={vi.fn()} />,
+    );
+
+    const input = screen.getByTestId("library-search") as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(input, { target: { value: "hello" } });
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("library-clear-search"));
+    });
+
+    expect(input.value).toBe("");
+  });
+
+  it("clears query when panel closes", async () => {
+    const { rerender } = render(
+      <LibraryPanel open={true} onClose={vi.fn()} onSelectNote={vi.fn()} />,
+    );
+
+    const input = screen.getByTestId("library-search") as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(input, { target: { value: "hello" } });
+    });
+    expect(input.value).toBe("hello");
+
+    rerender(
+      <LibraryPanel open={false} onClose={vi.fn()} onSelectNote={vi.fn()} />,
+    );
+    rerender(
+      <LibraryPanel open={true} onClose={vi.fn()} onSelectNote={vi.fn()} />,
+    );
+
+    const newInput = screen.getByTestId("library-search") as HTMLInputElement;
+    expect(newInput.value).toBe("");
   });
 });
