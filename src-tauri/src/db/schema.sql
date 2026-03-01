@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS notes (
   status        TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','completed','dropped')),
   pinned        INTEGER NOT NULL DEFAULT 0,
   context_set   TEXT REFERENCES context_sets(id),
+  inline_conversations TEXT,
   created_at    INTEGER NOT NULL,
   updated_at    INTEGER NOT NULL
 );

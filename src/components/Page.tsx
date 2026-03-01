@@ -9,7 +9,11 @@ import {
   startStreaming,
   streamDelta,
   completeStreaming,
+  restoreConversations,
+  serializeConversations,
+  deserializeConversations,
 } from "../editor";
+import type { SerializedConversation } from "../editor";
 import type { EditorView } from "@codemirror/view";
 import { Conversation } from "./Conversation";
 import { ChatInput } from "./ChatInput";
@@ -56,6 +60,7 @@ export function Page({ ready }: { ready: boolean }) {
   const contentRef = useRef(""); // tracks current editor content for save
   const inlineSessionRef = useRef<string | null>(null);
   const inlineUnlistenRef = useRef<(() => void) | null>(null);
+  const pendingConversationsRef = useRef<string | null>(null);
 
   // Inline conversation sessions — one pi session per inline conversation
   const inlineConvSessionsRef = useRef<Map<string, { sessionId: string; unlisten: () => void }>>(new Map());
@@ -103,7 +108,21 @@ export function Page({ ready }: { ready: boolean }) {
     if (!noteId || !content.trim()) return;
     const firstLine = content.split("\n")[0].replace(/^#\S*\s*/, "").trim();
     const title = firstLine.slice(0, 80) || "Untitled";
-    await notesApi.updateNote(noteId, { content, title });
+
+    // Extract inline conversations from CM6 state for persistence
+    let inline_conversations: string | undefined;
+    const view = editorViewRef.current;
+    if (view) {
+      const convState = view.state.field(conversationField, false);
+      if (convState) {
+        const serialized = serializeConversations(convState);
+        inline_conversations = serialized.length > 0
+          ? JSON.stringify(serialized)
+          : undefined;
+      }
+    }
+
+    await notesApi.updateNote(noteId, { content, title, inline_conversations });
   }, 1000);
 
   // Load note content when activeNoteId changes
@@ -134,6 +153,7 @@ export function Page({ ready }: { ready: boolean }) {
     notesApi.getNote(activeNoteId).then((note) => {
       if (cancelled || !note) return;
       contentRef.current = note.content ?? "";
+      pendingConversationsRef.current = note.inline_conversations ?? null;
       setLoadedContent(note.content ?? "");
       setEditorKey((k) => k + 1);
     });
@@ -142,6 +162,30 @@ export function Page({ ready }: { ready: boolean }) {
       cancelled = true;
     };
   }, [activeNoteId]);
+
+  // Restore inline conversations after editor remounts with new content
+  useEffect(() => {
+    const json = pendingConversationsRef.current;
+    if (!json) return;
+    // Small delay to ensure Editor has mounted and set viewRef
+    const timer = requestAnimationFrame(() => {
+      const view = editorViewRef.current;
+      if (!view) return;
+      try {
+        const data: SerializedConversation[] = JSON.parse(json);
+        if (data.length > 0) {
+          const conversations = deserializeConversations(data, view.state.doc.length);
+          view.dispatch({
+            effects: restoreConversations.of(conversations),
+          });
+        }
+      } catch {
+        // Invalid JSON — ignore
+      }
+      pendingConversationsRef.current = null;
+    });
+    return () => cancelAnimationFrame(timer);
+  }, [editorKey]);
 
   // Auto-create note on first meaningful content if no activeNoteId
   const createNoteIfNeeded = useCallback(

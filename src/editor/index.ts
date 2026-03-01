@@ -25,6 +25,8 @@ export {
   removeConversation,
   restoreConversations,
   nextConversationId,
+  serializeConversations,
+  deserializeConversations,
 } from "./inline-conversation";
 export type {
   InlineConversation,
@@ -32,4 +34,5 @@ export type {
   ConversationPhase,
   ConversationFieldState,
   InlineConversationOptions,
+  SerializedConversation,
 } from "./inline-conversation";

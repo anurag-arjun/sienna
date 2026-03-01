@@ -14,6 +14,7 @@ pub struct Note {
     pub status: String,
     pub pinned: bool,
     pub context_set: Option<String>,
+    pub inline_conversations: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
     #[serde(default)]
@@ -51,6 +52,7 @@ pub struct UpdateNote {
     pub status: Option<String>,
     pub pinned: Option<bool>,
     pub pi_session: Option<String>,
+    pub inline_conversations: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,7 +97,7 @@ pub fn create_note(conn: &Connection, input: &CreateNote) -> Result<Note, String
 pub fn get_note(conn: &Connection, id: &str) -> Result<Option<Note>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, type, title, content, pi_session, status, pinned, context_set, created_at, updated_at
+            "SELECT id, type, title, content, pi_session, status, pinned, context_set, inline_conversations, created_at, updated_at
              FROM notes WHERE id = ?1",
         )
         .map_err(|e| e.to_string())?;
@@ -111,8 +113,9 @@ pub fn get_note(conn: &Connection, id: &str) -> Result<Option<Note>, String> {
                 status: row.get(5)?,
                 pinned: row.get::<_, i32>(6)? != 0,
                 context_set: row.get(7)?,
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
+                inline_conversations: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
                 tags: Vec::new(),
             })
         })
@@ -159,6 +162,11 @@ pub fn update_note(conn: &Connection, id: &str, input: &UpdateNote) -> Result<No
     if let Some(ref pi_session) = input.pi_session {
         sets.push(format!("pi_session = ?{param_idx}"));
         param_values.push(Box::new(pi_session.clone()));
+        param_idx += 1;
+    }
+    if let Some(ref inline_conversations) = input.inline_conversations {
+        sets.push(format!("inline_conversations = ?{param_idx}"));
+        param_values.push(Box::new(inline_conversations.clone()));
         param_idx += 1;
     }
     let _ = param_idx; // suppress unused warning
@@ -224,7 +232,7 @@ pub fn list_notes(conn: &Connection, filter: &NoteFilter) -> Result<Vec<Note>, S
         };
 
         format!(
-            "SELECT n.id, n.type, n.title, n.content, n.pi_session, n.status, n.pinned, n.context_set, n.created_at, n.updated_at
+            "SELECT n.id, n.type, n.title, n.content, n.pi_session, n.status, n.pinned, n.context_set, n.inline_conversations, n.created_at, n.updated_at
              FROM notes n {where_clause}
              ORDER BY n.updated_at DESC LIMIT ?{param_idx} OFFSET ?{}",
             param_idx + 1
@@ -237,7 +245,7 @@ pub fn list_notes(conn: &Connection, filter: &NoteFilter) -> Result<Vec<Note>, S
         };
 
         format!(
-            "SELECT n.id, n.type, n.title, n.content, n.pi_session, n.status, n.pinned, n.context_set, n.created_at, n.updated_at
+            "SELECT n.id, n.type, n.title, n.content, n.pi_session, n.status, n.pinned, n.context_set, n.inline_conversations, n.created_at, n.updated_at
              FROM notes n {where_clause}
              ORDER BY n.updated_at DESC LIMIT ?{param_idx} OFFSET ?{}",
             param_idx + 1
@@ -261,8 +269,9 @@ pub fn list_notes(conn: &Connection, filter: &NoteFilter) -> Result<Vec<Note>, S
                 status: row.get(5)?,
                 pinned: row.get::<_, i32>(6)? != 0,
                 context_set: row.get(7)?,
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
+                inline_conversations: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
                 tags: Vec::new(),
             })
         })
@@ -838,6 +847,7 @@ mod tests {
                 status: None,
                 pinned: Some(true),
                 pi_session: None,
+                inline_conversations: None,
             },
         )
         .unwrap();
@@ -883,6 +893,7 @@ mod tests {
                 status: Some("completed".to_string()),
                 pinned: None,
                 pi_session: None,
+                inline_conversations: None,
             },
         )
         .unwrap();
@@ -1265,5 +1276,61 @@ mod tests {
 
         delete_note(&conn, &note.id).unwrap();
         assert!(get_note(&conn, &note.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_inline_conversations_persistence() {
+        let conn = init_memory_db().unwrap();
+        let note = create_note(
+            &conn,
+            &CreateNote {
+                note_type: "document".to_string(),
+                title: "With Conversations".to_string(),
+                content: Some("Hello world".to_string()),
+                pi_session: None,
+                tags: None,
+            },
+        )
+        .unwrap();
+
+        // Initially null
+        assert!(note.inline_conversations.is_none());
+
+        // Save inline conversations JSON
+        let convs_json = r#"[{"id":"conv-1","anchorPos":5,"messages":[{"role":"user","content":"Q1"},{"role":"assistant","content":"A1"}]}]"#;
+        let updated = update_note(
+            &conn,
+            &note.id,
+            &UpdateNote {
+                title: None,
+                content: None,
+                status: None,
+                pinned: None,
+                pi_session: None,
+                inline_conversations: Some(convs_json.to_string()),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(updated.inline_conversations.as_deref(), Some(convs_json));
+
+        // Verify it roundtrips through get_note
+        let fetched = get_note(&conn, &note.id).unwrap().unwrap();
+        assert_eq!(fetched.inline_conversations.as_deref(), Some(convs_json));
+
+        // Verify it appears in list_notes
+        let listed = list_notes(
+            &conn,
+            &NoteFilter {
+                status: None,
+                note_type: None,
+                tag: None,
+                search: None,
+                limit: None,
+                offset: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(listed[0].inline_conversations.as_deref(), Some(convs_json));
     }
 }

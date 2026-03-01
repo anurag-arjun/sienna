@@ -72,6 +72,49 @@ export const removeConversation = StateEffect.define<{ id: string }>();
 /** Restore conversations (e.g. from persisted annotations) */
 export const restoreConversations = StateEffect.define<InlineConversation[]>();
 
+// ── Serialization ──────────────────────────────────────────────────────
+
+/** Persistable form of an inline conversation (no streaming state). */
+export interface SerializedConversation {
+  id: string;
+  anchorPos: number;
+  messages: InlineMessage[];
+}
+
+/**
+ * Extract conversations from editor state for persistence.
+ * Only includes conversations with at least one message.
+ * Strips transient state (phase, streamingContent).
+ */
+export function serializeConversations(
+  state: ConversationFieldState,
+): SerializedConversation[] {
+  return state.conversations
+    .filter((c) => c.messages.length > 0)
+    .map((c) => ({
+      id: c.id,
+      anchorPos: c.anchorPos,
+      messages: c.messages,
+    }));
+}
+
+/**
+ * Convert persisted conversations back to full InlineConversation objects.
+ * All restored conversations start in the "collapsed" phase (warm dots).
+ */
+export function deserializeConversations(
+  data: SerializedConversation[],
+  docLength: number,
+): InlineConversation[] {
+  return data.map((c) => ({
+    id: c.id,
+    anchorPos: Math.min(c.anchorPos, docLength),
+    messages: c.messages,
+    phase: "collapsed" as ConversationPhase,
+    streamingContent: "",
+  }));
+}
+
 // ── State Field ────────────────────────────────────────────────────────
 
 export interface ConversationFieldState {

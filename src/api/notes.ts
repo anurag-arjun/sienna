@@ -15,6 +15,7 @@ export interface Note {
   status: string;
   pinned: boolean;
   context_set: string | null;
+  inline_conversations: string | null;
   created_at: number;
   updated_at: number;
   tags: string[];
@@ -34,6 +35,7 @@ export interface UpdateNote {
   status?: string;
   pinned?: boolean;
   pi_session?: string;
+  inline_conversations?: string;
 }
 
 export interface NoteFilter {

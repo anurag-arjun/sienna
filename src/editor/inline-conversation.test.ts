@@ -22,6 +22,8 @@ import {
   nextConversationId,
   resetConversationIdCounter,
   inlineConversation,
+  serializeConversations,
+  deserializeConversations,
 } from "./inline-conversation";
 import type { InlineConversation } from "./inline-conversation";
 
@@ -406,6 +408,125 @@ describe("inline-conversation", () => {
       expect(getConvs(state)[0].messages).toHaveLength(2);
       expect(getConvs(state)[0].messages[0].content).toBe("Q1");
       expect(getConvs(state)[0].messages[1].content).toBe("A1");
+    });
+  });
+
+  describe("serialization", () => {
+    it("serializeConversations strips transient state and empty conversations", () => {
+      let state = createState();
+
+      // Open two conversations
+      state = state.update({
+        effects: openConversation.of({ pos: 5, id: "conv-1" }),
+      }).state;
+      state = state.update({
+        effects: openConversation.of({ pos: 20, id: "conv-2" }),
+      }).state;
+
+      // Add message to conv-1 only
+      state = state.update({
+        effects: addUserMessage.of({ id: "conv-1", content: "Hello" }),
+      }).state;
+      state = state.update({
+        effects: startStreaming.of({ id: "conv-1" }),
+      }).state;
+      state = state.update({
+        effects: streamDelta.of({ id: "conv-1", delta: "Hi there" }),
+      }).state;
+      state = state.update({
+        effects: completeStreaming.of({ id: "conv-1" }),
+      }).state;
+
+      const convState = state.field(conversationField);
+      const serialized = serializeConversations(convState);
+
+      // Only conv-1 has messages, conv-2 is empty and excluded
+      expect(serialized).toHaveLength(1);
+      expect(serialized[0].id).toBe("conv-1");
+      expect(serialized[0].anchorPos).toBe(5);
+      expect(serialized[0].messages).toHaveLength(2);
+      // No phase or streamingContent in serialized form
+      expect(serialized[0]).not.toHaveProperty("phase");
+      expect(serialized[0]).not.toHaveProperty("streamingContent");
+    });
+
+    it("deserializeConversations restores as collapsed with clamped positions", () => {
+      const data = [
+        {
+          id: "conv-1",
+          anchorPos: 5,
+          messages: [
+            { role: "user" as const, content: "Q1" },
+            { role: "assistant" as const, content: "A1" },
+          ],
+        },
+        {
+          id: "conv-2",
+          anchorPos: 999, // beyond doc length
+          messages: [{ role: "user" as const, content: "Q2" }],
+        },
+      ];
+
+      const restored = deserializeConversations(data, 30);
+
+      expect(restored).toHaveLength(2);
+
+      // conv-1: position preserved, collapsed
+      expect(restored[0].id).toBe("conv-1");
+      expect(restored[0].anchorPos).toBe(5);
+      expect(restored[0].phase).toBe("collapsed");
+      expect(restored[0].streamingContent).toBe("");
+      expect(restored[0].messages).toHaveLength(2);
+
+      // conv-2: position clamped to doc length
+      expect(restored[1].anchorPos).toBe(30);
+      expect(restored[1].phase).toBe("collapsed");
+    });
+
+    it("round-trips through serialize → deserialize → restore", () => {
+      let state = createState();
+
+      // Create a conversation with messages
+      state = state.update({
+        effects: openConversation.of({ pos: 5, id: "conv-rt" }),
+      }).state;
+      state = state.update({
+        effects: addUserMessage.of({ id: "conv-rt", content: "Question" }),
+      }).state;
+      state = state.update({
+        effects: startStreaming.of({ id: "conv-rt" }),
+      }).state;
+      state = state.update({
+        effects: streamDelta.of({ id: "conv-rt", delta: "Answer" }),
+      }).state;
+      state = state.update({
+        effects: completeStreaming.of({ id: "conv-rt" }),
+      }).state;
+      state = state.update({
+        effects: collapseConversation.of({ id: "conv-rt" }),
+      }).state;
+
+      // Serialize
+      const serialized = serializeConversations(state.field(conversationField));
+      const json = JSON.stringify(serialized);
+
+      // Deserialize into a fresh state
+      const parsed = JSON.parse(json);
+      const restored = deserializeConversations(parsed, state.doc.length);
+
+      let freshState = createState();
+      freshState = freshState.update({
+        effects: restoreConversations.of(restored),
+      }).state;
+
+      const convs = getConvs(freshState);
+      expect(convs).toHaveLength(1);
+      expect(convs[0].id).toBe("conv-rt");
+      expect(convs[0].anchorPos).toBe(5);
+      expect(convs[0].phase).toBe("collapsed");
+      expect(convs[0].messages).toHaveLength(2);
+      expect(convs[0].messages[0]).toEqual({ role: "user", content: "Question" });
+      expect(convs[0].messages[1]).toEqual({ role: "assistant", content: "Answer" });
     });
   });
 });
