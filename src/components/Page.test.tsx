@@ -2,6 +2,16 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent, act } from "@testing-library/react";
 import { Page } from "./Page";
 
+// Mock pi API
+vi.mock("../api/pi", () => ({
+  piApi: {
+    createSession: vi.fn().mockResolvedValue("inline-session-1"),
+    prompt: vi.fn().mockResolvedValue(undefined),
+    onSessionEvent: vi.fn().mockResolvedValue(vi.fn()),
+    destroySession: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
 // Mock context API
 vi.mock("../api/context", () => ({
   contextApi: {

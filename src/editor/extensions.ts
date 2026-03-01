@@ -7,6 +7,7 @@ import { EditorState } from "@codemirror/state";
 import { moodTheme } from "./theme";
 import { inlineMarkdownRendering } from "./inline-render";
 import { inlineInvoke, type InlineInvokeOptions } from "./inline-invoke";
+import { inlineGenerate } from "./inline-generate";
 
 /**
  * Base set of CodeMirror extensions for Mood Editor.
@@ -60,8 +61,9 @@ export function createBaseExtensions(options?: {
         ]
       : []),
 
-    // Inline AI invocation (Tab at line start)
+    // Inline AI invocation (Tab at line start) + generation
     inlineInvoke({ onSubmit: options?.onInlineInvoke }),
+    inlineGenerate(),
 
     // Tab size for indentation
     EditorState.tabSize.of(2),

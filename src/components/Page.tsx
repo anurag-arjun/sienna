@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Editor } from "../editor";
+import { Editor, generationField, startGeneration, insertDelta, completeGeneration } from "../editor";
+import type { EditorView } from "@codemirror/view";
 import { Conversation } from "./Conversation";
 import { ChatInput } from "./ChatInput";
 import { LibraryPanel } from "./LibraryPanel";
@@ -8,6 +9,7 @@ import { useAutoSave } from "../hooks/useAutoSave";
 import { resolveMode, type ModeConfig, type NoteTag } from "../lib/note-mode";
 import { buildDistillPrompt, suggestDistillTitle } from "../lib/distill";
 import { notesApi, type Note } from "../api/notes";
+import { piApi, type PiEvent } from "../api/pi";
 import { ContextTray, ContextBadge } from "./ContextTray";
 import { ContextCard } from "./ContextCard";
 import { ContextSearch } from "./ContextSearch";
@@ -35,7 +37,10 @@ export function Page({ ready }: { ready: boolean }) {
   const [trayOpen, setTrayOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const editorContentRef = useRef<(() => string) | null>(null);
+  const editorViewRef = useRef<EditorView | null>(null);
   const contentRef = useRef(""); // tracks current editor content for save
+  const inlineSessionRef = useRef<string | null>(null);
+  const inlineUnlistenRef = useRef<(() => void) | null>(null);
 
   const onConversationError = useCallback(
     (err: string) => console.error("Conversation error:", err),
@@ -64,6 +69,16 @@ export function Page({ ready }: { ready: boolean }) {
 
   // Load note content when activeNoteId changes
   useEffect(() => {
+    // Clean up any in-progress inline generation
+    if (inlineUnlistenRef.current) {
+      inlineUnlistenRef.current();
+      inlineUnlistenRef.current = null;
+    }
+    if (inlineSessionRef.current) {
+      piApi.destroySession(inlineSessionRef.current).catch(() => {});
+      inlineSessionRef.current = null;
+    }
+
     if (!activeNoteId) {
       setLoadedContent("");
       setEditorKey((k) => k + 1);
@@ -112,6 +127,50 @@ export function Page({ ready }: { ready: boolean }) {
     },
     [],
   );
+
+  // ── Inline AI generation ─────────────────────────────────────────
+  const handleInlineInvoke = useCallback(async (instruction: string, pos: number) => {
+    const view = editorViewRef.current;
+    if (!view) return;
+
+    try {
+      // Create a dedicated session for inline generation
+      const sessionId = await piApi.createSession({
+        system_prompt: "You are a writing assistant. Generate text based on the user's instruction. Output ONLY the requested text, no explanations or markdown fences.",
+        no_session: true,
+      });
+      inlineSessionRef.current = sessionId;
+
+      // Start generation in the editor
+      view.dispatch({ effects: startGeneration.of({ pos }) });
+
+      // Subscribe to streaming events
+      const unlisten = await piApi.onSessionEvent(sessionId, (event: PiEvent) => {
+        const v = editorViewRef.current;
+        if (!v) return;
+
+        if (event.type === "text_delta") {
+          const gen = v.state.field(generationField);
+          if (gen.phase === "generating") {
+            v.dispatch(insertDelta(gen, event.delta));
+          }
+        } else if (event.type === "agent_end") {
+          v.dispatch({ effects: completeGeneration.of() });
+          // Clean up
+          inlineUnlistenRef.current?.();
+          inlineUnlistenRef.current = null;
+          piApi.destroySession(sessionId).catch(() => {});
+          inlineSessionRef.current = null;
+        }
+      });
+      inlineUnlistenRef.current = unlisten;
+
+      // Send the instruction
+      await piApi.prompt(sessionId, instruction);
+    } catch (err) {
+      console.error("Inline generation failed:", err);
+    }
+  }, []);
 
   const handleEditorChange = useCallback((content: string) => {
     contentRef.current = content;
@@ -282,6 +341,8 @@ export function Page({ ready }: { ready: boolean }) {
               placeholder="Start writing…"
               onChange={handleEditorChange}
               contentRef={editorContentRef}
+              viewRef={editorViewRef}
+              onInlineInvoke={handleInlineInvoke}
               autoFocus
             />
           </div>

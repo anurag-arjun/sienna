@@ -74,6 +74,14 @@ body {
   animation: blink 1s step-end infinite;
 }
 
+/* Generated text (lighter appearance until accepted) */
+.cm-generated-text {
+  color: var(--color-text-ai);
+  opacity: 0.7;
+  background: color-mix(in srgb, var(--color-accent-warm) 5%, transparent);
+  border-radius: 2px;
+}
+
 /* Inline invoke widget */
 .cm-invoke-widget {
   padding: 4px 0;

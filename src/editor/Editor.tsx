@@ -14,6 +14,10 @@ interface EditorProps {
   autoFocus?: boolean;
   /** Ref to get the current editor content imperatively */
   contentRef?: React.MutableRefObject<(() => string) | null>;
+  /** Ref to access the EditorView for dispatching effects */
+  viewRef?: React.MutableRefObject<EditorView | null>;
+  /** Called when inline AI instruction is submitted */
+  onInlineInvoke?: (instruction: string, pos: number) => void;
 }
 
 /**
@@ -26,16 +30,24 @@ export function Editor({
   onChange,
   autoFocus = true,
   contentRef,
+  viewRef: externalViewRef,
+  onInlineInvoke,
 }: EditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
 
-  // Stable onChange ref to avoid recreating extensions
+  // Stable refs to avoid recreating extensions
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const onInlineInvokeRef = useRef(onInlineInvoke);
+  onInlineInvokeRef.current = onInlineInvoke;
 
   const stableOnChange = useCallback((content: string) => {
     onChangeRef.current?.(content);
+  }, []);
+
+  const stableOnInlineInvoke = useCallback((instruction: string, pos: number) => {
+    onInlineInvokeRef.current?.(instruction, pos);
   }, []);
 
   useEffect(() => {
@@ -46,6 +58,7 @@ export function Editor({
       extensions: createBaseExtensions({
         placeholder,
         onChange: stableOnChange,
+        onInlineInvoke: stableOnInlineInvoke,
       }),
     });
 
@@ -55,6 +68,11 @@ export function Editor({
     });
 
     viewRef.current = view;
+
+    // Expose view ref externally for dispatching effects
+    if (externalViewRef) {
+      externalViewRef.current = view;
+    }
 
     // Expose content getter
     if (contentRef) {
@@ -69,6 +87,9 @@ export function Editor({
     return () => {
       view.destroy();
       viewRef.current = null;
+      if (externalViewRef) {
+        externalViewRef.current = null;
+      }
       if (contentRef) {
         contentRef.current = null;
       }
