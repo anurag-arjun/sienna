@@ -11,6 +11,7 @@ import {
 } from "../lib/context-search";
 import { notesApi } from "../api/notes";
 import { contextApi } from "../api/context";
+import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 
 interface ContextSearchProps {
   /** Note ID to attach context items to */
@@ -164,27 +165,56 @@ export function ContextSearch({ noteId, onAdd }: ContextSearchProps) {
     [results, handleAdd],
   );
 
+  const handleBrowse = useCallback(async () => {
+    if (!noteId) return;
+    try {
+      const selected = await openFileDialog({
+        multiple: true,
+        title: "Add files to context",
+      });
+      if (!selected) return;
+
+      const paths = Array.isArray(selected) ? selected : [selected];
+      for (const path of paths) {
+        if (path) await onAdd(path);
+      }
+    } catch (err) {
+      console.error("File dialog failed:", err);
+    }
+  }, [noteId, onAdd]);
+
   const grouped = groupBySource(results);
 
   return (
     <div data-testid="context-search">
-      {/* Search input */}
-      <div className="relative mb-3">
-        <input
-          ref={inputRef}
-          type="text"
-          value={query}
-          onChange={handleChange}
-          onKeyDown={handleKeyDown}
-          placeholder="Search files, notes, or paste URL…"
-          className="w-full bg-surface-1/80 text-text-primary text-sm rounded-lg px-3 py-2 border border-accent-muted/30 focus:border-accent-blue/50 focus:outline-none placeholder:text-text-tertiary"
-          data-testid="context-search-input"
-        />
-        {searching && (
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-text-tertiary text-xs">
-            …
-          </span>
-        )}
+      {/* Search input + Browse button */}
+      <div className="flex items-center gap-2 mb-3">
+        <div className="relative flex-1">
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            placeholder="Search files, notes, or paste URL…"
+            className="w-full bg-surface-1/80 text-text-primary text-sm rounded-lg px-3 py-2 border border-accent-muted/30 focus:border-accent-blue/50 focus:outline-none placeholder:text-text-tertiary"
+            data-testid="context-search-input"
+          />
+          {searching && (
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-text-tertiary text-xs">
+              …
+            </span>
+          )}
+        </div>
+        <button
+          onClick={handleBrowse}
+          disabled={!noteId}
+          className="shrink-0 bg-surface-1/80 text-text-secondary text-sm rounded-lg px-3 py-2 border border-accent-muted/30 hover:border-accent-blue/50 hover:text-text-primary transition-colors disabled:opacity-40 cursor-pointer"
+          title="Browse files"
+          data-testid="context-browse-button"
+        >
+          📂
+        </button>
       </div>
 
       {/* Results grouped by source */}

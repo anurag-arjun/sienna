@@ -56,6 +56,11 @@ vi.mock("../api/context", () => ({
   },
 }));
 
+const mockOpenDialog = vi.fn();
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  open: (...args: unknown[]) => mockOpenDialog(...args),
+}));
+
 describe("ContextSearch", () => {
   afterEach(() => {
     cleanup();
@@ -186,6 +191,45 @@ describe("ContextSearch", () => {
     await waitFor(() => {
       expect(screen.getByText("No results")).toBeTruthy();
     });
+  });
+
+  it("renders browse button", () => {
+    render(<ContextSearch noteId="note-1" onAdd={vi.fn()} />);
+    expect(screen.getByTestId("context-browse-button")).toBeTruthy();
+  });
+
+  it("browse button is disabled without noteId", () => {
+    render(<ContextSearch noteId={undefined} onAdd={vi.fn()} />);
+    const btn = screen.getByTestId("context-browse-button") as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+  });
+
+  it("opens file dialog on browse click and adds selected files", async () => {
+    mockOpenDialog.mockResolvedValue(["/home/user/test.rs"]);
+    const onAdd = vi.fn().mockResolvedValue(undefined);
+    render(<ContextSearch noteId="note-1" onAdd={onAdd} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("context-browse-button"));
+    });
+
+    expect(mockOpenDialog).toHaveBeenCalledWith({
+      multiple: true,
+      title: "Add files to context",
+    });
+    expect(onAdd).toHaveBeenCalledWith("/home/user/test.rs");
+  });
+
+  it("handles dialog cancellation gracefully", async () => {
+    mockOpenDialog.mockResolvedValue(null);
+    const onAdd = vi.fn();
+    render(<ContextSearch noteId="note-1" onAdd={onAdd} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("context-browse-button"));
+    });
+
+    expect(onAdd).not.toHaveBeenCalled();
   });
 
   it("groups results by source type", async () => {
