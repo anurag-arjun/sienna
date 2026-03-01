@@ -4,6 +4,8 @@ import {
   isFilePath,
   isGitHubRef,
   parseGitHubRef,
+  isNotionRef,
+  parseNotionRef,
   classifyQuery,
   groupBySource,
   sourceLabel,
@@ -130,12 +132,69 @@ describe("context-search", () => {
     });
   });
 
+  describe("isNotionRef", () => {
+    it("detects notion: prefix", () => {
+      expect(isNotionRef("notion:my page")).toBe(true);
+      expect(isNotionRef("notion:project planning")).toBe(true);
+    });
+
+    it("detects Notion URLs", () => {
+      expect(isNotionRef("https://www.notion.so/workspace/My-Page-abc123def456789012345678abcdef01")).toBe(true);
+      expect(isNotionRef("https://notion.so/abc123def456789012345678abcdef01")).toBe(true);
+      expect(isNotionRef("https://www.notion.site/Page-abc123def456789012345678abcdef01")).toBe(true);
+    });
+
+    it("rejects non-Notion", () => {
+      expect(isNotionRef("hello world")).toBe(false);
+      expect(isNotionRef("https://github.com/repo")).toBe(false);
+    });
+  });
+
+  describe("parseNotionRef", () => {
+    it("parses notion: search", () => {
+      const result = parseNotionRef("notion:project docs");
+      expect(result).toEqual({ type: "search", value: "project docs" });
+    });
+
+    it("parses Notion URL to page ID", () => {
+      const result = parseNotionRef("https://www.notion.so/workspace/My-Page-abc123def456789012345678abcdef01");
+      expect(result).toEqual({
+        type: "page",
+        value: "abc123de-f456-7890-1234-5678abcdef01",
+      });
+    });
+
+    it("parses short Notion URL", () => {
+      const result = parseNotionRef("https://notion.so/abc123def456789012345678abcdef01");
+      expect(result).toEqual({
+        type: "page",
+        value: "abc123de-f456-7890-1234-5678abcdef01",
+      });
+    });
+
+    it("returns null for empty notion: prefix", () => {
+      expect(parseNotionRef("notion:")).toBeNull();
+      expect(parseNotionRef("notion:  ")).toBeNull();
+    });
+  });
+
+  describe("classifyQuery — notion", () => {
+    it("classifies notion: prefix as notion source", () => {
+      expect(classifyQuery("notion:my docs")).toEqual(["notion"]);
+    });
+
+    it("classifies Notion URL as notion source (not url)", () => {
+      expect(classifyQuery("https://www.notion.so/abc123def456789012345678abcdef01")).toEqual(["notion"]);
+    });
+  });
+
   describe("sourceLabel", () => {
     it("returns display labels", () => {
       expect(sourceLabel("local")).toBe("Files");
       expect(sourceLabel("note")).toBe("Notes");
       expect(sourceLabel("url")).toBe("URLs");
       expect(sourceLabel("github")).toBe("GitHub");
+      expect(sourceLabel("notion")).toBe("Notion");
     });
   });
 });

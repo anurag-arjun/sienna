@@ -3,7 +3,7 @@
  * Routes queries to filesystem, notes, and URL fetching.
  */
 
-export type SearchSourceType = "local" | "note" | "url" | "github";
+export type SearchSourceType = "local" | "note" | "url" | "github" | "notion";
 
 export interface SearchResult {
   source: SearchSourceType;
@@ -32,6 +32,50 @@ export function isFilePath(query: string): boolean {
     trimmed.startsWith("./") ||
     trimmed.startsWith("../")
   );
+}
+
+/**
+ * Detect if a query is a Notion reference.
+ * Matches: notion:search term, or a Notion URL.
+ */
+export function isNotionRef(query: string): boolean {
+  const trimmed = query.trim();
+  return (
+    trimmed.startsWith("notion:") ||
+    /^https?:\/\/(www\.)?notion\.(so|site)\//.test(trimmed)
+  );
+}
+
+/**
+ * Parse a Notion reference.
+ * - "notion:search term" → search query
+ * - Notion URL with page ID → page ID
+ */
+export function parseNotionRef(query: string): {
+  type: "search" | "page";
+  value: string;
+} | null {
+  const trimmed = query.trim();
+
+  if (trimmed.startsWith("notion:")) {
+    const term = trimmed.slice("notion:".length).trim();
+    return term ? { type: "search", value: term } : null;
+  }
+
+  // Notion URL: extract page ID from the last segment
+  // Format: https://www.notion.so/workspace/Page-Title-<32hex>
+  // or: https://www.notion.so/<32hex>
+  const urlMatch = trimmed.match(
+    /^https?:\/\/(?:www\.)?notion\.(?:so|site)\/(?:\S+?-)?([a-f0-9]{32})\b/i,
+  );
+  if (urlMatch) {
+    // Format as UUID with dashes
+    const hex = urlMatch[1];
+    const pageId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    return { type: "page", value: pageId };
+  }
+
+  return null;
 }
 
 /**
@@ -81,6 +125,7 @@ export function parseGitHubRef(query: string): {
 export function classifyQuery(query: string): SearchSourceType[] {
   const trimmed = query.trim();
   if (!trimmed) return [];
+  if (isNotionRef(trimmed)) return ["notion"];
   if (isUrl(trimmed)) return ["url"];
   if (isFilePath(trimmed)) return ["local"];
   if (isGitHubRef(trimmed)) return ["github"];
@@ -116,6 +161,8 @@ export function sourceLabel(source: SearchSourceType): string {
       return "URLs";
     case "github":
       return "GitHub";
+    case "notion":
+      return "Notion";
   }
 }
 
@@ -132,5 +179,7 @@ export function sourceIcon(source: SearchSourceType): string {
       return "🔗";
     case "github":
       return "⌥";
+    case "notion":
+      return "◻";
   }
 }

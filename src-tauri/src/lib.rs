@@ -1,6 +1,7 @@
 mod agent;
 mod db;
 mod github;
+mod notion;
 mod import;
 
 use agent::bridge::PiBridge;
@@ -339,6 +340,53 @@ async fn github_push_file(
     github::push_file(&pat, &owner, &repo, &path, &branch, &content, &message).await
 }
 
+// ── Notion Commands ────────────────────────────────────────────────────
+
+#[tauri::command]
+async fn notion_set_token(state: State<'_, AppState>, token: String) -> Result<String, String> {
+    let workspace = notion::validate_token(&token).await?;
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    store::set_setting(&conn, "notion_token", &token)?;
+    Ok(workspace)
+}
+
+#[tauri::command]
+fn notion_get_token(state: State<'_, AppState>) -> Result<Option<String>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    store::get_setting(&conn, "notion_token")
+}
+
+#[tauri::command]
+fn notion_clear_token(state: State<'_, AppState>) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    store::delete_setting(&conn, "notion_token")
+}
+
+fn get_notion_token(state: &State<'_, AppState>) -> Result<String, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    store::get_setting(&conn, "notion_token")?
+        .ok_or_else(|| "No Notion token configured. Set one first.".to_string())
+}
+
+#[tauri::command]
+async fn notion_search(
+    state: State<'_, AppState>,
+    query: String,
+    page_size: Option<u32>,
+) -> Result<Vec<notion::NotionSearchResult>, String> {
+    let token = get_notion_token(&state)?;
+    notion::search(&token, &query, page_size.unwrap_or(10)).await
+}
+
+#[tauri::command]
+async fn notion_get_page(
+    state: State<'_, AppState>,
+    page_id: String,
+) -> Result<String, String> {
+    let token = get_notion_token(&state)?;
+    notion::get_page_content(&token, &page_id).await
+}
+
 // ── Pi Agent Commands ──────────────────────────────────────────────────
 
 #[tauri::command]
@@ -568,6 +616,11 @@ pub fn run() {
             github_get_issue,
             github_get_pr_diff,
             github_push_file,
+            notion_set_token,
+            notion_get_token,
+            notion_clear_token,
+            notion_search,
+            notion_get_page,
             pi_create_session,
             pi_prompt,
             pi_steer,

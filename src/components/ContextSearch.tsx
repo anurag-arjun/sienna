@@ -8,12 +8,15 @@ import {
   isFilePath,
   isGitHubRef,
   parseGitHubRef,
+  isNotionRef,
+  parseNotionRef,
   type SearchResult,
   type SearchSourceType,
 } from "../lib/context-search";
 import { notesApi } from "../api/notes";
 import { contextApi } from "../api/context";
 import { githubApi } from "../api/github";
+import { notionApi } from "../api/notion";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 
 /**
@@ -49,6 +52,23 @@ async function fetchGitHubContent(reference: string): Promise<string | null> {
     return null;
   } catch (err) {
     console.error("GitHub fetch failed:", err);
+    return null;
+  }
+}
+
+/**
+ * Fetch content for a Notion reference string.
+ * Format: "notion:page:<page-id>"
+ */
+async function fetchNotionContent(reference: string): Promise<string | null> {
+  try {
+    if (reference.startsWith("notion:page:")) {
+      const pageId = reference.slice("notion:page:".length);
+      return await notionApi.getPage(pageId);
+    }
+    return null;
+  } catch (err) {
+    console.error("Notion fetch failed:", err);
     return null;
   }
 }
@@ -141,6 +161,43 @@ export function ContextSearch({ noteId, onAdd }: ContextSearchProps) {
           });
         }
 
+        // Notion reference — search or direct page
+        if (sources.includes("notion") && isNotionRef(trimmed)) {
+          const ref_ = parseNotionRef(trimmed);
+          if (ref_) {
+            if (ref_.type === "page") {
+              // Direct page reference
+              allResults.push({
+                source: "notion",
+                label: `Notion page`,
+                reference: `notion:page:${ref_.value}`,
+                preview: "Fetch page content",
+              });
+            } else {
+              // Search Notion workspace
+              try {
+                const pages = await notionApi.search(ref_.value, 8);
+                for (const page of pages) {
+                  const icon = page.icon ?? (page.object === "database" ? "📊" : "📄");
+                  allResults.push({
+                    source: "notion",
+                    label: `${icon} ${page.title}`,
+                    reference: `notion:page:${page.id}`,
+                    preview: `${page.object} · edited ${page.last_edited.slice(0, 10)}`,
+                  });
+                }
+              } catch {
+                allResults.push({
+                  source: "notion",
+                  label: "Notion search failed",
+                  reference: "",
+                  preview: "Check your integration token",
+                });
+              }
+            }
+          }
+        }
+
         // GitHub reference — parse and show options
         if (sources.includes("github") && isGitHubRef(trimmed)) {
           const ref_ = parseGitHubRef(trimmed);
@@ -218,6 +275,18 @@ export function ContextSearch({ noteId, onAdd }: ContextSearchProps) {
             await contextApi.addNoteContext({
               note_id: noteId,
               type: "github",
+              reference: result.reference,
+              label: result.label,
+              content_cache: content,
+            });
+            await onAdd("");
+          }
+        } else if (result.source === "notion") {
+          const content = await fetchNotionContent(result.reference);
+          if (content) {
+            await contextApi.addNoteContext({
+              note_id: noteId,
+              type: "notion",
               reference: result.reference,
               label: result.label,
               content_cache: content,
