@@ -247,6 +247,33 @@ describe("useConversation", () => {
     expect(result.current.error).toBeNull();
   });
 
+  it("injects context via append_system_prompt on connect, not in send", async () => {
+    const piApi = await getPiApi();
+    const contextAssembler = { current: vi.fn().mockResolvedValue("\n\n--- Context ---\nSome context data") };
+
+    const { result } = renderHook(() =>
+      useConversation({ contextAssembler }),
+    );
+
+    await act(async () => {
+      await result.current.connect();
+    });
+
+    // Context should be passed as append_system_prompt on session creation
+    expect(piApi.createSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        append_system_prompt: "\n\n--- Context ---\nSome context data",
+      }),
+    );
+
+    // Send a message — should NOT include context in the message text
+    await act(async () => {
+      await result.current.send("Hello AI");
+    });
+
+    expect(piApi.prompt).toHaveBeenCalledWith("test-session-123", "Hello AI");
+  });
+
   it("clears messages on disconnect", async () => {
     const piApi = await getPiApi();
     (piApi.getMessages as ReturnType<typeof vi.fn>).mockResolvedValueOnce([

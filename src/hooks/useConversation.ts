@@ -177,6 +177,20 @@ export function useConversation(
     async (connectOptions?: CreateSessionRequest) => {
       try {
         const opts = connectOptions ?? sessionOptionsRef.current ?? {};
+
+        // Assemble context from matched context sets and inject as system prompt
+        const assembler = contextAssemblerRef.current;
+        if (assembler && !opts.append_system_prompt) {
+          try {
+            const contextStr = await assembler();
+            if (contextStr) {
+              opts.append_system_prompt = contextStr;
+            }
+          } catch {
+            // Context assembly failure is non-fatal
+          }
+        }
+
         const sid = await piApi.createSession(opts);
         setSessionId(sid);
         setError(null);
@@ -218,21 +232,7 @@ export function useConversation(
       setError(null);
 
       try {
-        // Assemble context from matched context sets
-        let messageWithContext = trimmed;
-        const assembler = contextAssemblerRef.current;
-        if (assembler) {
-          try {
-            const contextStr = await assembler();
-            if (contextStr) {
-              messageWithContext = trimmed + contextStr;
-            }
-          } catch {
-            // Context assembly failure is non-fatal
-          }
-        }
-
-        await piApi.prompt(sid, messageWithContext);
+        await piApi.prompt(sid, trimmed);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         setError(msg);
