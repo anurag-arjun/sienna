@@ -213,15 +213,23 @@ describe("Page", () => {
     expect(vi.mocked(mockNotes.createNote)).not.toHaveBeenCalled();
   });
 
-  it("shows context tray indicator", () => {
-    const { container } = render(<Page ready={true} />);
-    const spans = container.querySelectorAll("span");
-    const countSpan = Array.from(spans).find(
-      (s) =>
-        s.textContent?.trim() === "0" &&
-        s.className.includes("text-[10px]"),
-    );
-    expect(countSpan).toBeTruthy();
+  it("shows context badge", () => {
+    render(<Page ready={true} />);
+    const badge = screen.getByTestId("context-badge");
+    expect(badge).toBeTruthy();
+    expect(badge.textContent).toBe("0");
+  });
+
+  it("opens context tray when badge is clicked", async () => {
+    render(<Page ready={true} />);
+    const badge = screen.getByTestId("context-badge");
+
+    await act(async () => {
+      fireEvent.click(badge);
+    });
+
+    expect(screen.getByTestId("context-tray-overlay")).toBeTruthy();
+    expect(screen.getByTestId("context-tray-panel")).toBeTruthy();
   });
 
   it("loads note content when selecting from library", async () => {

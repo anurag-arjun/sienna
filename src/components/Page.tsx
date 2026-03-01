@@ -8,6 +8,7 @@ import { useAutoSave } from "../hooks/useAutoSave";
 import { resolveMode, type ModeConfig, type NoteTag } from "../lib/note-mode";
 import { buildDistillPrompt, suggestDistillTitle } from "../lib/distill";
 import { notesApi, type Note } from "../api/notes";
+import { ContextTray, ContextBadge } from "./ContextTray";
 
 export type PageMode = "document" | "conversation";
 
@@ -28,6 +29,8 @@ export function Page({ ready }: { ready: boolean }) {
   const [distilling, setDistilling] = useState(false);
   const [loadedContent, setLoadedContent] = useState("");
   const [editorKey, setEditorKey] = useState(0);
+  const [trayOpen, setTrayOpen] = useState(false);
+  const [contextCount] = useState(0); // will be wired to actual items later
   const scrollRef = useRef<HTMLDivElement>(null);
   const editorContentRef = useRef<(() => string) | null>(null);
   const contentRef = useRef(""); // tracks current editor content for save
@@ -351,7 +354,7 @@ export function Page({ ready }: { ready: boolean }) {
         >
           {noteMode.icon} {noteMode.label}
         </button>
-        <span className="text-text-tertiary text-[10px] opacity-40">0</span>
+        <ContextBadge count={contextCount} onClick={() => setTrayOpen(true)} />
       </div>
 
       {/* Library panel */}
@@ -360,6 +363,13 @@ export function Page({ ready }: { ready: boolean }) {
         onClose={handleCloseLibrary}
         onSelectNote={handleSelectNote}
         activeNoteId={activeNoteId}
+      />
+
+      {/* Context tray */}
+      <ContextTray
+        open={trayOpen}
+        onClose={() => setTrayOpen(false)}
+        contextCount={contextCount}
       />
     </main>
   );
