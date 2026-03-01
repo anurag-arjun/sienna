@@ -12,6 +12,8 @@ interface EditorProps {
   onChange?: (content: string) => void;
   /** Whether the editor should auto-focus */
   autoFocus?: boolean;
+  /** Ref to get the current editor content imperatively */
+  contentRef?: React.MutableRefObject<(() => string) | null>;
 }
 
 /**
@@ -23,6 +25,7 @@ export function Editor({
   placeholder = "Start writing…",
   onChange,
   autoFocus = true,
+  contentRef,
 }: EditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -53,6 +56,11 @@ export function Editor({
 
     viewRef.current = view;
 
+    // Expose content getter
+    if (contentRef) {
+      contentRef.current = () => view.state.doc.toString();
+    }
+
     if (autoFocus) {
       // Small delay to ensure mount is complete
       requestAnimationFrame(() => view.focus());
@@ -61,6 +69,9 @@ export function Editor({
     return () => {
       view.destroy();
       viewRef.current = null;
+      if (contentRef) {
+        contentRef.current = null;
+      }
     };
     // Only create once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -4,6 +4,7 @@ import { Conversation } from "./Conversation";
 import { ChatInput } from "./ChatInput";
 import { LibraryPanel } from "./LibraryPanel";
 import { useConversation } from "../hooks/useConversation";
+import { useAutoSave } from "../hooks/useAutoSave";
 import { resolveMode, type ModeConfig, type NoteTag } from "../lib/note-mode";
 import { buildDistillPrompt, suggestDistillTitle } from "../lib/distill";
 import { notesApi, type Note } from "../api/notes";
@@ -25,7 +26,11 @@ export function Page({ ready }: { ready: boolean }) {
   const [activeNoteId, setActiveNoteId] = useState<string | undefined>();
   const [noteMode, setNoteMode] = useState<ModeConfig>(() => resolveMode(""));
   const [distilling, setDistilling] = useState(false);
+  const [loadedContent, setLoadedContent] = useState("");
+  const [editorKey, setEditorKey] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const editorContentRef = useRef<(() => string) | null>(null);
+  const contentRef = useRef(""); // tracks current editor content for save
 
   const onConversationError = useCallback(
     (err: string) => console.error("Conversation error:", err),
@@ -36,7 +41,72 @@ export function Page({ ready }: { ready: boolean }) {
     onError: onConversationError,
   });
 
+  // ── Note persistence ──────────────────────────────────────────────
+  const activeNoteIdRef = useRef(activeNoteId);
+  activeNoteIdRef.current = activeNoteId;
+
+  const { markDirty, flush: flushSave } = useAutoSave(async () => {
+    const noteId = activeNoteIdRef.current;
+    const content = contentRef.current;
+    if (!noteId || !content.trim()) return;
+    const firstLine = content.split("\n")[0].replace(/^#\S*\s*/, "").trim();
+    const title = firstLine.slice(0, 80) || "Untitled";
+    await notesApi.updateNote(noteId, { content, title });
+  }, 1000);
+
+  // Load note content when activeNoteId changes
+  useEffect(() => {
+    if (!activeNoteId) {
+      setLoadedContent("");
+      setEditorKey((k) => k + 1);
+      return;
+    }
+
+    let cancelled = false;
+    notesApi.getNote(activeNoteId).then((note) => {
+      if (cancelled || !note) return;
+      contentRef.current = note.content ?? "";
+      setLoadedContent(note.content ?? "");
+      setEditorKey((k) => k + 1);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeNoteId]);
+
+  // Auto-create note on first meaningful content if no activeNoteId
+  const createNoteIfNeeded = useCallback(
+    async (content: string) => {
+      if (activeNoteIdRef.current) return;
+      if (content.trim().length < 2) return;
+
+      const detected = resolveMode(content);
+      const firstLine = content.split("\n")[0].replace(/^#\S*\s*/, "").trim();
+      const title = firstLine.slice(0, 80) || "Untitled";
+
+      const noteType =
+        detected.enterBehavior === "send" ? "conversation" : "document";
+      const tags = detected.tag ? [detected.tag] : [];
+
+      try {
+        const note = await notesApi.createNote({
+          note_type: noteType,
+          title,
+          content,
+          tags,
+        });
+        activeNoteIdRef.current = note.id;
+        setActiveNoteId(note.id);
+      } catch (err) {
+        console.error("Failed to create note:", err);
+      }
+    },
+    [],
+  );
+
   const handleEditorChange = useCallback((content: string) => {
+    contentRef.current = content;
     const words = content.trim() ? content.trim().split(/\s+/).length : 0;
     setWordCount(words);
 
@@ -54,7 +124,14 @@ export function Page({ ready }: { ready: boolean }) {
 
       return detected;
     });
-  }, []);
+
+    // Trigger auto-save or auto-create
+    if (activeNoteIdRef.current) {
+      markDirty();
+    } else {
+      createNoteIfNeeded(content);
+    }
+  }, [markDirty, createNoteIfNeeded]);
 
   // Auto-scroll conversation to bottom on new content
   useEffect(() => {
@@ -82,7 +159,15 @@ export function Page({ ready }: { ready: boolean }) {
     }
   }, []);
 
-  // Cmd+J toggles mode, Cmd+O toggles library, Cmd+D distills
+  // New note: flush current, reset to blank surface
+  const handleNewNote = useCallback(async () => {
+    await flushSave();
+    setActiveNoteId(undefined);
+    contentRef.current = "";
+    setMode("document");
+  }, [flushSave]);
+
+  // Cmd+J toggles mode, Cmd+O toggles library, Cmd+D distills, Cmd+N new note
   const handleDistillRef = useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
@@ -103,10 +188,14 @@ export function Page({ ready }: { ready: boolean }) {
         e.preventDefault();
         handleDistillRef.current?.();
       }
+      if (e.key === "n" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        handleNewNote();
+      }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [mode, handleSwitchToConversation]);
+  }, [mode, handleSwitchToConversation, handleNewNote]);
 
   const handleOpenLibrary = useCallback(() => setLibraryOpen(true), []);
   const handleCloseLibrary = useCallback(() => setLibraryOpen(false), []);
@@ -159,10 +248,15 @@ export function Page({ ready }: { ready: boolean }) {
   );
   handleDistillRef.current = handleDistill;
 
-  const handleSelectNote = useCallback((note: Note) => {
-    setActiveNoteId(note.id);
-    setMode(note.type === "conversation" ? "conversation" : "document");
-  }, []);
+  const handleSelectNote = useCallback(
+    async (note: Note) => {
+      // Flush pending save for current note before switching
+      await flushSave();
+      setActiveNoteId(note.id);
+      setMode(note.type === "conversation" ? "conversation" : "document");
+    },
+    [flushSave],
+  );
 
   const readingTime = Math.max(1, Math.ceil(wordCount / 250));
 
@@ -175,8 +269,11 @@ export function Page({ ready }: { ready: boolean }) {
           /* ── Document mode: Editor ─────────────────────────── */
           <div className="flex-1 flex flex-col min-h-0">
             <Editor
+              key={editorKey}
+              initialContent={loadedContent}
               placeholder="Start writing…"
               onChange={handleEditorChange}
+              contentRef={editorContentRef}
               autoFocus
             />
           </div>
