@@ -35,3 +35,10 @@ tauri-plugin-dialog = "2.6.0"
 tauri-plugin-fs = "2"
 reqwest = { version = "0.12", features = ["json"] }
 base64 = "0.22"
+
+# Optimize deps in dev builds for acceptable startup time
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.dev]
+opt-level = 1
