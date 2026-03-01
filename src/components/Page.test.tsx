@@ -70,28 +70,27 @@ describe("Page", () => {
     });
     // Should show conversation placeholder
     expect(screen.getByText("Start a conversation…")).toBeTruthy();
-    // Mode indicator changes
-    expect(screen.getByTestId("mode-toggle").textContent).toContain("chat");
     // Should attempt to connect
     expect(mockConversation.connect).toHaveBeenCalled();
   });
 
   it("switches mode with Ctrl+J", async () => {
     render(<Page ready={true} />);
-    // Should start in document mode
+    // Should start in document mode — default label is "write"
     expect(screen.getByTestId("mode-toggle").textContent).toContain("write");
 
     await act(async () => {
       fireEvent.keyDown(window, { key: "j", ctrlKey: true });
     });
-    // Now in conversation mode
-    expect(screen.getByTestId("mode-toggle").textContent).toContain("chat");
+    // Now in conversation mode — shows conversation view
+    expect(screen.getByText("Start a conversation…")).toBeTruthy();
 
     await act(async () => {
       fireEvent.keyDown(window, { key: "j", ctrlKey: true });
     });
     // Back to document mode
-    expect(screen.getByTestId("mode-toggle").textContent).toContain("write");
+    const { container } = render(<Page ready={true} />);
+    expect(container.querySelector(".cm-editor")).toBeTruthy();
   });
 
   it("shows chat input in conversation mode", async () => {

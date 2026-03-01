@@ -4,6 +4,7 @@ import { Conversation } from "./Conversation";
 import { ChatInput } from "./ChatInput";
 import { LibraryPanel } from "./LibraryPanel";
 import { useConversation } from "../hooks/useConversation";
+import { resolveMode, type ModeConfig } from "../lib/note-mode";
 import type { Note } from "../api/notes";
 
 export type PageMode = "document" | "conversation";
@@ -21,6 +22,7 @@ export function Page({ ready }: { ready: boolean }) {
   const [wordCount, setWordCount] = useState(0);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [activeNoteId, setActiveNoteId] = useState<string | undefined>();
+  const [noteMode, setNoteMode] = useState<ModeConfig>(() => resolveMode(""));
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const onConversationError = useCallback(
@@ -35,6 +37,21 @@ export function Page({ ready }: { ready: boolean }) {
   const handleEditorChange = useCallback((content: string) => {
     const words = content.trim() ? content.trim().split(/\s+/).length : 0;
     setWordCount(words);
+
+    // Detect tag-based mode from first line
+    const detected = resolveMode(content);
+    setNoteMode((prev) => {
+      if (prev.tag === detected.tag) return prev;
+
+      // Auto-switch to conversation mode on #chat
+      if (detected.enterBehavior === "send") {
+        setMode("conversation");
+      } else if (prev.enterBehavior === "send") {
+        setMode("document");
+      }
+
+      return detected;
+    });
   }, []);
 
   // Auto-scroll conversation to bottom on new content
@@ -177,7 +194,7 @@ export function Page({ ready }: { ready: boolean }) {
           data-testid="mode-toggle"
           title={`Switch to ${mode === "document" ? "conversation" : "document"} (Ctrl+J)`}
         >
-          {mode === "document" ? "✎ write" : "◆ chat"}
+          {noteMode.icon} {noteMode.label}
         </button>
         <span className="text-text-tertiary text-[10px] opacity-40">0</span>
       </div>
