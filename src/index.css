@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+/* Mood Editor — Warm Dark Theme */
+/* Single theme, designed correctly once. */
+
+@theme {
+  /* Background layers */
+  --color-surface-0: #1a1a2e;     /* deepest background */
+  --color-surface-1: #1e1e32;     /* main page background */
+  --color-surface-2: #252538;     /* cards, panels */
+  --color-surface-3: #2c2c42;     /* elevated elements, hover */
+
+  /* Text hierarchy */
+  --color-text-primary: #e8e6e3;    /* main body text */
+  --color-text-secondary: #a8a5a0;  /* secondary, metadata */
+  --color-text-tertiary: #6b6860;   /* whisper text, timestamps */
+  --color-text-ai: #c5c2bc;         /* AI response text — lighter weight feel */
+
+  /* Functional accents */
+  --color-accent-blue: #7aa2d4;     /* active status, links */
+  --color-accent-green: #7ac4a0;    /* completed status */
+  --color-accent-warm: #d4a574;     /* AI insertion state, highlights */
+  --color-accent-muted: #4a4a5e;    /* borders, dividers */
+
+  /* Status dots */
+  --color-status-active: #7aa2d4;
+  --color-status-completed: #7ac4a0;
+  --color-status-dropped: #5a5850;
+
+  /* Typography — one family, one set of proportions */
+  --font-sans: "Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", ui-monospace, monospace;
+
+  /* Spacing scale */
+  --spacing-page-x: 4rem;
+  --spacing-page-y: 3rem;
+
+  /* Transitions — fast but not jarring */
+  --transition-fast: 150ms ease;
+  --transition-normal: 200ms ease;
+}
+
+/* Base styles */
+:root {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.6;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--color-surface-1);
+  color: var(--color-text-primary);
+  overflow: hidden;
+}
+
+/* Selection */
+::selection {
+  background-color: color-mix(in srgb, var(--color-accent-warm) 30%, transparent);
+  color: var(--color-text-primary);
+}
+
+/* Scrollbar — minimal */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-accent-muted);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-tertiary);
+}
