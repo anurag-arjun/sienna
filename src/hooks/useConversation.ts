@@ -40,6 +40,8 @@ export interface UseConversationReturn {
   abort: () => Promise<void>;
   /** Create/connect a session */
   connect: (options?: CreateSessionRequest) => Promise<string>;
+  /** Attach to an existing bridge session (e.g. after fork) */
+  attachSession: (sessionId: string) => Promise<string>;
   /** Destroy the session */
   disconnect: () => Promise<void>;
   /** Switch model mid-conversation */
@@ -162,6 +164,7 @@ export function useConversation(
             role: m.role,
             content: m.content,
             model: m.model,
+            entryId: m.entry_id,
           }));
           setMessages(hydrated);
         }
@@ -297,6 +300,36 @@ export function useConversation(
     }
   }, []);
 
+  // Attach to an existing bridge session (e.g. after fork) — stable
+  const attachSession = useCallback(
+    async (sid: string) => {
+      try {
+        // Clean up any existing subscription
+        if (unlistenRef.current) {
+          unlistenRef.current();
+          unlistenRef.current = null;
+        }
+
+        setSessionId(sid);
+        setError(null);
+
+        // Subscribe to events for this session
+        const unlisten = await piApi.onSessionEvent(sid, handleEvent);
+        unlistenRef.current = unlisten;
+
+        // Hydrate existing messages from pi session JSONL
+        await hydrateMessages(sid);
+
+        return sid;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setError(msg);
+        throw err;
+      }
+    },
+    [handleEvent, hydrateMessages],
+  );
+
   // Disconnect — stable
   const disconnect = useCallback(async () => {
     if (unlistenRef.current) {
@@ -334,6 +367,7 @@ export function useConversation(
     steer,
     abort,
     connect,
+    attachSession,
     disconnect,
     switchModel,
     error,

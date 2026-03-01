@@ -120,6 +120,23 @@ pub struct SessionMessage {
     pub content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entry_id: Option<String>,
+}
+
+/// A forkable message entry from the session.
+#[derive(Debug, Clone, Serialize)]
+pub struct ForkableMessage {
+    pub entry_id: String,
+    pub text: String,
+}
+
+/// Result of forking a session.
+#[derive(Debug, Clone, Serialize)]
+pub struct ForkResult {
+    pub session_id: String,
+    pub session_path: Option<String>,
+    pub selected_text: String,
 }
 
 /// Model info for the frontend.

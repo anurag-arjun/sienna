@@ -8,9 +8,9 @@ vi.mock("../api/pi", () => ({
     createSession: vi.fn().mockResolvedValue("inline-session-1"),
     prompt: vi.fn().mockResolvedValue(undefined),
     getMessages: vi.fn().mockResolvedValue([]),
+    getForkMessages: vi.fn().mockResolvedValue([]),
+    forkSession: vi.fn().mockResolvedValue({ session_id: "fork-session-1", session_path: "/tmp/fork.jsonl", selected_text: "Hello" }),
     onSessionEvent: vi.fn().mockImplementation((_sid: string, cb: (event: unknown) => void) => {
-      // For distill tests: simulate AI response when prompt is called
-      // The callback is stored and triggered by prompt mock
       return Promise.resolve(vi.fn());
     }),
     destroySession: vi.fn().mockResolvedValue(undefined),
@@ -66,7 +66,7 @@ vi.mock("../api/notes", () => ({
 
 // Mock useConversation to avoid IPC calls
 const mockConversation = {
-  messages: [],
+  messages: [] as Array<{ id: string; role: string; content: string; model?: string; entryId?: string }>,
   streaming: false,
   streamingContent: "",
   sessionId: null as string | null,
@@ -74,6 +74,7 @@ const mockConversation = {
   steer: vi.fn(),
   abort: vi.fn(),
   connect: vi.fn().mockResolvedValue("test-session"),
+  attachSession: vi.fn().mockResolvedValue("fork-session-1"),
   disconnect: vi.fn(),
   error: null as string | null,
 };

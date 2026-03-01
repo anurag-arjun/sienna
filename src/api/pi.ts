@@ -41,6 +41,19 @@ export interface SessionMessage {
   model?: string;
 }
 
+/** A forkable user message entry from the session. */
+export interface ForkableMessage {
+  entry_id: string;
+  text: string;
+}
+
+/** Result of forking a session. */
+export interface ForkResult {
+  session_id: string;
+  session_path: string | null;
+  selected_text: string;
+}
+
 /** Discriminated union of events emitted by the pi backend. */
 export type PiEvent =
   | { type: 'agent_start'; session_id: string }
@@ -90,6 +103,16 @@ export async function getMessages(sessionId: string): Promise<SessionMessage[]> 
   return invoke<SessionMessage[]>('pi_get_messages', { sessionId });
 }
 
+/** Get forkable user message entries from the session. */
+export async function getForkMessages(sessionId: string): Promise<ForkableMessage[]> {
+  return invoke<ForkableMessage[]>('pi_get_fork_messages', { sessionId });
+}
+
+/** Fork a session at a specific user message entry. Returns the new session info. */
+export async function forkSession(sessionId: string, entryId: string): Promise<ForkResult> {
+  return invoke<ForkResult>('pi_fork_session', { sessionId, entryId });
+}
+
 /** Destroy a session and free resources. */
 export async function destroySession(sessionId: string): Promise<void> {
   return invoke<void>('pi_destroy_session', { sessionId });
@@ -121,6 +144,8 @@ export const piApi = {
   abort,
   getState,
   getMessages,
+  getForkMessages,
+  forkSession,
   setModel,
   destroySession,
   onEvent,

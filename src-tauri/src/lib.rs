@@ -3,7 +3,7 @@ mod db;
 mod import;
 
 use agent::bridge::PiBridge;
-use agent::types::{CreateSessionRequest, SessionMessage, SessionState};
+use agent::types::{CreateSessionRequest, ForkResult, ForkableMessage, SessionMessage, SessionState};
 use serde::{Deserialize, Serialize};
 use db::store::{self, AssembledContext, ContextSet, ContextSetItem, CreateContextSet, CreateContextSetItem, CreateNote, CreateNoteContext, Note, NoteContext, NoteFilter, NoteLink, Tag, UpdateContextSet, UpdateNote};
 use std::collections::HashMap;
@@ -308,6 +308,53 @@ async fn pi_get_state(
 }
 
 #[tauri::command]
+async fn pi_get_fork_messages(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<Vec<ForkableMessage>, String> {
+    state.pi.get_fork_messages(session_id).await
+}
+
+#[tauri::command]
+async fn pi_fork_session(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    session_id: String,
+    entry_id: String,
+) -> Result<ForkResult, String> {
+    let (result, mut event_rx) = state.pi.fork_session(session_id, entry_id).await?;
+
+    // Spawn event forwarder for the new forked session
+    let app_handle = app.clone();
+    let sid = result.session_id.clone();
+    let (stop_tx, mut stop_rx) = tokio::sync::oneshot::channel::<()>();
+
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::select! {
+                event = event_rx.recv() => {
+                    match event {
+                        Some(pi_event) => {
+                            let _ = app_handle.emit("pi-event", &pi_event);
+                        }
+                        None => break,
+                    }
+                }
+                _ = &mut stop_rx => break,
+            }
+        }
+    });
+
+    state
+        .event_forwarders
+        .lock()
+        .unwrap()
+        .insert(sid, stop_tx);
+
+    Ok(result)
+}
+
+#[tauri::command]
 async fn pi_get_messages(
     state: State<'_, AppState>,
     session_id: String,
@@ -414,6 +461,8 @@ pub fn run() {
             pi_abort,
             pi_get_state,
             pi_get_messages,
+            pi_get_fork_messages,
+            pi_fork_session,
             pi_set_model,
             pi_destroy_session,
         ])

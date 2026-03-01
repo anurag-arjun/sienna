@@ -313,19 +313,33 @@ export function Page({ ready }: { ready: boolean }) {
       const msgs = conversation.messages;
       if (messageIndex < 0 || messageIndex >= msgs.length) return;
 
-      // Take messages up to and including the fork point
-      const forkedMessages = msgs.slice(0, messageIndex + 1);
-      const lastUserMsg = [...forkedMessages].reverse().find((m) => m.role === "user");
-      const title = lastUserMsg
-        ? `Fork: ${lastUserMsg.content.slice(0, 60)}`
-        : "Forked conversation";
+      const sid = conversation.sessionId;
+      if (!sid) return;
 
-      // Build conversation history as context for the new session
-      const historyContext = forkedMessages
-        .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
-        .join("\n\n");
+      // Find the user message at or before the fork point for the entry_id
+      // Fork is triggered on assistant messages; the preceding user message is the fork target
+      let forkUserMsg = msgs[messageIndex];
+      if (forkUserMsg.role === "assistant") {
+        // Walk backwards to find the preceding user message
+        for (let i = messageIndex - 1; i >= 0; i--) {
+          if (msgs[i].role === "user" && msgs[i].entryId) {
+            forkUserMsg = msgs[i];
+            break;
+          }
+        }
+      }
+
+      if (!forkUserMsg.entryId) {
+        console.error("Fork failed: no entry_id on target message");
+        return;
+      }
+
+      const title = `Fork: ${forkUserMsg.content.slice(0, 60)}`;
 
       try {
+        // Fork the pi session at the target user message
+        const forkResult = await piApi.forkSession(sid, forkUserMsg.entryId);
+
         // Create the forked note
         const newNote = await notesApi.createNote({
           note_type: "conversation",
@@ -347,21 +361,20 @@ export function Page({ ready }: { ready: boolean }) {
           }
         }
 
+        // Store the pi session path on the note
+        if (forkResult.session_path) {
+          await notesApi.updateNote(newNote.id, {
+            pi_session: forkResult.session_path,
+          });
+        }
+
         // Flush current save, switch to new note
         await flushSave();
         setActiveNoteId(newNote.id);
 
-        // Connect a new session with the forked history as context
-        const sid = await conversation.connect({
-          append_system_prompt: `Continue this conversation. Here is the history so far:\n\n${historyContext}`,
-        });
-
-        // Pre-populate messages in the UI so the user sees the shared history
-        // (We set these directly since the new session doesn't have them yet)
-        if (sid) {
-          // The conversation hook starts fresh, so we'll just let the user
-          // continue from here. The history is injected as system prompt context.
-        }
+        // Attach to the forked session (already created by pi_fork_session)
+        await conversation.disconnect();
+        await conversation.attachSession(forkResult.session_id);
       } catch (err) {
         console.error("Fork failed:", err);
       }

@@ -12,6 +12,8 @@ export interface Message {
   timestamp?: string;
   /** Model that generated this response (assistant only) */
   model?: string;
+  /** Pi session entry ID (for fork targeting) */
+  entryId?: string;
 }
 
 interface ConversationProps {

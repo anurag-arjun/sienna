@@ -7,7 +7,7 @@
 //!
 //! Each active session gets its own entry in a shared session map.
 
-use crate::agent::types::{CreateSessionRequest, PiEvent, SessionMessage, SessionState};
+use crate::agent::types::{CreateSessionRequest, ForkResult, ForkableMessage, PiEvent, SessionMessage, SessionState};
 use pi::sdk::{
     self, AgentEvent, AgentSessionHandle, SessionOptions,
 };
@@ -47,6 +47,16 @@ enum PiCommand {
     GetMessages {
         session_id: String,
         reply: oneshot::Sender<Result<Vec<SessionMessage>, String>>,
+    },
+    GetForkMessages {
+        session_id: String,
+        reply: oneshot::Sender<Result<Vec<ForkableMessage>, String>>,
+    },
+    ForkSession {
+        session_id: String,
+        entry_id: String,
+        reply: oneshot::Sender<Result<ForkResult, String>>,
+        event_tx: mpsc::UnboundedSender<PiEvent>,
     },
     SetModel {
         session_id: String,
@@ -192,6 +202,44 @@ impl PiBridge {
             .map_err(|_| "pi runtime dropped".to_string())?
     }
 
+    /// Get forkable user messages from a session.
+    pub async fn get_fork_messages(&self, session_id: String) -> Result<Vec<ForkableMessage>, String> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.cmd_tx
+            .send(PiCommand::GetForkMessages {
+                session_id,
+                reply: reply_tx,
+            })
+            .map_err(|_| "pi runtime not running".to_string())?;
+        reply_rx
+            .await
+            .map_err(|_| "pi runtime dropped".to_string())?
+    }
+
+    /// Fork a session at a specific user message entry.
+    pub async fn fork_session(
+        &self,
+        session_id: String,
+        entry_id: String,
+    ) -> Result<(ForkResult, mpsc::UnboundedReceiver<PiEvent>), String> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        let (event_tx, event_rx) = mpsc::unbounded_channel();
+
+        self.cmd_tx
+            .send(PiCommand::ForkSession {
+                session_id,
+                entry_id,
+                reply: reply_tx,
+                event_tx,
+            })
+            .map_err(|_| "pi runtime not running".to_string())?;
+
+        reply_rx
+            .await
+            .map_err(|_| "pi runtime dropped".to_string())?
+            .map(|result| (result, event_rx))
+    }
+
     /// Get messages from a session (hydration from pi JSONL).
     pub async fn get_messages(&self, session_id: String) -> Result<Vec<SessionMessage>, String> {
         let (reply_tx, reply_rx) = oneshot::channel();
@@ -313,6 +361,22 @@ async fn handle_command(
             reply,
         } => {
             let result = get_messages_impl(&session_id, sessions).await;
+            let _ = reply.send(result);
+        }
+        PiCommand::GetForkMessages {
+            session_id,
+            reply,
+        } => {
+            let result = get_fork_messages_impl(&session_id, sessions).await;
+            let _ = reply.send(result);
+        }
+        PiCommand::ForkSession {
+            session_id,
+            entry_id,
+            reply,
+            event_tx,
+        } => {
+            let result = fork_session_impl(&session_id, &entry_id, event_tx, sessions).await;
             let _ = reply.send(result);
         }
         PiCommand::SetModel {
@@ -494,31 +558,185 @@ async fn set_model_impl(
         .map_err(|e| e.to_string())
 }
 
+async fn get_fork_messages_impl(
+    session_id: &str,
+    sessions: &Arc<Mutex<HashMap<String, SessionEntry>>>,
+) -> Result<Vec<ForkableMessage>, String> {
+    let session_arc = {
+        let map = sessions.lock().unwrap();
+        let entry = map
+            .get(session_id)
+            .ok_or_else(|| format!("Session not found: {session_id}"))?;
+        entry.handle.session().session.clone()
+    };
+
+    let cx = pi::agent_cx::AgentCx::for_request();
+    let mut guard = session_arc
+        .lock(cx.cx())
+        .await
+        .map_err(|e| format!("Session lock failed: {e}"))?;
+
+    guard.ensure_entry_ids();
+
+    let mut result = Vec::new();
+    for path_entry in guard.entries_for_current_path() {
+        if let pi::session::SessionEntry::Message(msg_entry) = path_entry {
+            if let pi::session::SessionMessage::User { content, .. } = &msg_entry.message {
+                let Some(ref id) = msg_entry.base.id else { continue };
+                let text = match content {
+                    pi::model::UserContent::Text(t) => t.clone(),
+                    pi::model::UserContent::Blocks(blocks) => {
+                        blocks
+                            .iter()
+                            .filter_map(|b| {
+                                if let pi::model::ContentBlock::Text(t) = b {
+                                    Some(t.text.as_str())
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    }
+                };
+                result.push(ForkableMessage {
+                    entry_id: id.clone(),
+                    text,
+                });
+            }
+        }
+    }
+    Ok(result)
+}
+
+async fn fork_session_impl(
+    session_id: &str,
+    entry_id: &str,
+    event_tx: mpsc::UnboundedSender<PiEvent>,
+    sessions: &Arc<Mutex<HashMap<String, SessionEntry>>>,
+) -> Result<ForkResult, String> {
+    // Phase 1: Compute fork plan from source session
+    let (fork_plan, parent_path, session_dir, header_provider, header_model, header_thinking) = {
+        let session_arc = {
+            let map = sessions.lock().unwrap();
+            let entry = map
+                .get(session_id)
+                .ok_or_else(|| format!("Session not found: {session_id}"))?;
+            entry.handle.session().session.clone()
+        };
+
+        let cx = pi::agent_cx::AgentCx::for_request();
+        let guard = session_arc
+            .lock(cx.cx())
+            .await
+            .map_err(|e| format!("Session lock failed: {e}"))?;
+
+        let plan = guard
+            .plan_fork_from_user_message(entry_id)
+            .map_err(|e| format!("Fork failed: {e}"))?;
+        let parent_path = guard.path.as_ref().map(|p| p.display().to_string());
+        let session_dir = guard.session_dir.clone();
+        let provider = guard.header.provider.clone();
+        let model_id = guard.header.model_id.clone();
+        let thinking = guard.header.thinking_level.clone();
+
+        (plan, parent_path, session_dir, provider, model_id, thinking)
+    };
+
+    // Phase 2: Build and save the new forked session
+    let selected_text = fork_plan.selected_text.clone();
+    let fork_entries = fork_plan.entries;
+    let fork_leaf_id = fork_plan.leaf_id;
+
+    let mut new_session = pi::session::Session::create_with_dir(session_dir);
+    new_session.header.parent_session = parent_path;
+    new_session.header.provider.clone_from(&header_provider);
+    new_session.header.model_id.clone_from(&header_model);
+    new_session.header.thinking_level.clone_from(&header_thinking);
+    new_session.entries = fork_entries;
+    new_session.leaf_id = fork_leaf_id;
+    new_session.ensure_entry_ids();
+
+    new_session
+        .save()
+        .await
+        .map_err(|e| format!("Failed to save forked session: {e}"))?;
+
+    let session_path = new_session.path.as_ref().map(|p| p.display().to_string());
+    let session_path_buf = new_session.path.clone();
+
+    // Phase 3: Create a new agent session from the saved fork JSONL
+    let new_session_id = uuid::Uuid::new_v4().to_string();
+    let new_sid = new_session_id.clone();
+
+    let event_tx_clone = event_tx.clone();
+    let sid_for_events = new_session_id.clone();
+    let on_event: Arc<dyn Fn(AgentEvent) + Send + Sync> = Arc::new(move |event| {
+        let pi_event = agent_event_to_pi_event(&sid_for_events, &event);
+        if let Some(ev) = pi_event {
+            let _ = event_tx_clone.send(ev);
+        }
+    });
+
+    let mut options = SessionOptions {
+        provider: header_provider,
+        model: header_model,
+        on_event: Some(on_event),
+        ..SessionOptions::default()
+    };
+    if let Some(ref path) = session_path_buf {
+        options.session_path = Some(path.clone());
+    }
+
+    let handle = sdk::create_agent_session(options)
+        .await
+        .map_err(|e| format!("Failed to create forked session: {e}"))?;
+
+    let session_entry = SessionEntry {
+        handle,
+        event_tx,
+        abort_handle: None,
+    };
+    sessions
+        .lock()
+        .unwrap()
+        .insert(new_session_id.clone(), session_entry);
+
+    Ok(ForkResult {
+        session_id: new_sid,
+        session_path,
+        selected_text,
+    })
+}
+
 async fn get_messages_impl(
     session_id: &str,
     sessions: &Arc<Mutex<HashMap<String, SessionEntry>>>,
 ) -> Result<Vec<SessionMessage>, String> {
-    let map = sessions.lock().unwrap();
-    let entry = map
-        .get(session_id)
-        .ok_or_else(|| format!("Session not found: {session_id}"))?;
+    // Use session entries directly to get entry IDs alongside messages
+    let session_arc = {
+        let map = sessions.lock().unwrap();
+        let entry = map
+            .get(session_id)
+            .ok_or_else(|| format!("Session not found: {session_id}"))?;
+        entry.handle.session().session.clone()
+    };
 
-    let messages = entry
-        .handle
-        .messages()
+    let cx = pi::agent_cx::AgentCx::for_request();
+    let guard = session_arc
+        .lock(cx.cx())
         .await
-        .map_err(|e| format!("Failed to get messages: {e}"))?;
+        .map_err(|e| format!("Session lock failed: {e}"))?;
 
-    Ok(messages
-        .iter()
-        .filter_map(|msg| {
-            use pi::model::Message as PiMessage;
-            match msg {
-                PiMessage::User(user_msg) => {
-                    let content = match &user_msg.content {
-                        pi::model::UserContent::Text(text) => text.clone(),
+    let mut result = Vec::new();
+    for path_entry in guard.entries_for_current_path() {
+        if let pi::session::SessionEntry::Message(msg_entry) = path_entry {
+            let entry_id = msg_entry.base.id.clone();
+            match &msg_entry.message {
+                pi::session::SessionMessage::User { content, .. } => {
+                    let text = match content {
+                        pi::model::UserContent::Text(t) => t.clone(),
                         pi::model::UserContent::Blocks(blocks) => {
-                            // Extract text from content blocks
                             blocks
                                 .iter()
                                 .filter_map(|b| {
@@ -532,14 +750,15 @@ async fn get_messages_impl(
                                 .join("\n")
                         }
                     };
-                    Some(SessionMessage {
+                    result.push(SessionMessage {
                         role: "user".to_string(),
-                        content,
+                        content: text,
                         model: None,
-                    })
+                        entry_id,
+                    });
                 }
-                PiMessage::Assistant(assistant_msg) => {
-                    let content = assistant_msg
+                pi::session::SessionMessage::Assistant { message, .. } => {
+                    let content = message
                         .content
                         .iter()
                         .filter_map(|b| {
@@ -552,18 +771,20 @@ async fn get_messages_impl(
                         .collect::<Vec<_>>()
                         .join("\n");
                     if content.is_empty() {
-                        return None;
+                        continue;
                     }
-                    Some(SessionMessage {
+                    result.push(SessionMessage {
                         role: "assistant".to_string(),
                         content,
-                        model: Some(assistant_msg.model.clone()),
-                    })
+                        model: Some(message.model.clone()),
+                        entry_id,
+                    });
                 }
-                _ => None, // Skip tool results, custom messages
+                _ => {} // Skip tool results
             }
-        })
-        .collect())
+        }
+    }
+    Ok(result)
 }
 
 // ── Event Conversion ───────────────────────────────────────────────────
