@@ -20,6 +20,8 @@ interface ConversationProps {
   streaming?: boolean;
   /** Partial content being streamed (appended as last message) */
   streamingContent?: string;
+  /** Called when fork is requested at a specific message index */
+  onFork?: (messageIndex: number) => void;
 }
 
 /**
@@ -32,6 +34,7 @@ export function Conversation({
   messages,
   streaming = false,
   streamingContent = "",
+  onFork,
 }: ConversationProps) {
   // Combine messages with optional streaming content
   const allMessages = useMemo(() => {
@@ -68,6 +71,11 @@ export function Conversation({
           model={msg.model}
           isStreaming={streaming && index === allMessages.length - 1 && msg.id === "__streaming__"}
           isFirst={index === 0}
+          onFork={
+            onFork && msg.role === "assistant" && msg.id !== "__streaming__"
+              ? () => onFork(index)
+              : undefined
+          }
         />
       ))}
 

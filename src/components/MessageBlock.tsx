@@ -14,6 +14,8 @@ interface MessageBlockProps {
   model?: string;
   isStreaming?: boolean;
   isFirst?: boolean;
+  /** Called when the fork button is clicked on this message */
+  onFork?: () => void;
 }
 
 export function MessageBlock({
@@ -22,13 +24,14 @@ export function MessageBlock({
   model,
   isStreaming = false,
   isFirst = false,
+  onFork,
 }: MessageBlockProps) {
   const isUser = role === "user";
 
   return (
     <div
       className={`
-        relative
+        relative group
         ${isUser ? "mt-2" : "mt-0"}
         ${isFirst ? "mt-0" : ""}
       `}
@@ -49,15 +52,27 @@ export function MessageBlock({
         )}
       </div>
 
-      {/* Model attribution whisper (assistant only) */}
-      {!isUser && model && !isStreaming && (
-        <div className="mt-1">
-          <span
-            className="text-text-tertiary text-[10px] opacity-40 select-none"
-            data-testid="model-attribution"
-          >
-            {modelAttribution(model)}
-          </span>
+      {/* Model attribution + fork (assistant only) */}
+      {!isUser && !isStreaming && (
+        <div className="mt-1 flex items-center gap-2">
+          {model && (
+            <span
+              className="text-text-tertiary text-[10px] opacity-40 select-none"
+              data-testid="model-attribution"
+            >
+              {modelAttribution(model)}
+            </span>
+          )}
+          {onFork && (
+            <button
+              onClick={onFork}
+              className="text-text-tertiary text-[10px] opacity-0 group-hover:opacity-40 hover:!opacity-70 transition-opacity cursor-pointer select-none"
+              title="Fork from here (Ctrl+B)"
+              data-testid="fork-button"
+            >
+              ⑂
+            </button>
+          )}
         </div>
       )}
     </div>
