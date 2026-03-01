@@ -2,7 +2,7 @@
 
 A desktop Markdown editor with built-in AI. Write documents, have conversations, or do both on the same page.
 
-![Tauri](https://img.shields.io/badge/Tauri-v2-blue) ![React](https://img.shields.io/badge/React-19-blue) ![License](https://img.shields.io/badge/license-private-lightgrey)
+![Tauri](https://img.shields.io/badge/Tauri-v2-blue) ![React](https://img.shields.io/badge/React-19-blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
 ## What it does
 
@@ -67,4 +67,4 @@ Core surface is functional. Remaining work: GitHub/Notion context integrations, 
 
 ## License
 
-Private. © 2026
+[MIT](LICENSE)
