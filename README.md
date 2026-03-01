@@ -61,6 +61,15 @@ pnpm test              # 270 frontend tests (Vitest)
 cd src-tauri && cargo test --lib  # 26 backend tests
 ```
 
+## Wayland
+
+On Linux with Wayland + WebKitGTK, the first launch may be slow or show a blank screen on some GPU/driver combinations. The dev script sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` automatically. For production builds, export it yourself:
+
+```bash
+export WEBKIT_DISABLE_DMABUF_RENDERER=1
+./mood-editor
+```
+
 ## Status
 
 Core surface is functional. Remaining work: GitHub/Notion context integrations, export/publish sheet, Wayland workaround, live AI testing.
