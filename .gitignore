@@ -6,3 +6,4 @@ src-tauri/target/
 docs/
 CONTEXT.md
 THEORY.MD
+.pi/
