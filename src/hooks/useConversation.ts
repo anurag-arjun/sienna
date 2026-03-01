@@ -17,6 +17,8 @@ export interface UseConversationOptions {
   sessionOptions?: CreateSessionRequest;
   /** Called when an error occurs */
   onError?: (error: string) => void;
+  /** Ref to a function that assembles context set content for injection */
+  contextAssembler?: React.RefObject<(() => Promise<string>) | null>;
 }
 
 export interface UseConversationReturn {
@@ -64,6 +66,7 @@ export function useConversation(
   const sessionIdRef = useRef<string | null>(null);
   const onErrorRef = useRef(options.onError);
   const sessionOptionsRef = useRef(options.sessionOptions);
+  const contextAssemblerRef = options.contextAssembler ?? useRef(null);
 
   // Keep refs in sync
   useEffect(() => {
@@ -172,15 +175,31 @@ export function useConversation(
       }
       if (!text.trim()) return;
 
-      // Add user message immediately
+      const trimmed = text.trim();
+
+      // Add user message immediately (shows original text, not with context)
       setMessages((prev) => [
         ...prev,
-        { id: nextMessageId(), role: "user", content: text.trim() },
+        { id: nextMessageId(), role: "user", content: trimmed },
       ]);
       setError(null);
 
       try {
-        await piApi.prompt(sid, text.trim());
+        // Assemble context from matched context sets
+        let messageWithContext = trimmed;
+        const assembler = contextAssemblerRef.current;
+        if (assembler) {
+          try {
+            const contextStr = await assembler();
+            if (contextStr) {
+              messageWithContext = trimmed + contextStr;
+            }
+          } catch {
+            // Context assembly failure is non-fatal
+          }
+        }
+
+        await piApi.prompt(sid, messageWithContext);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         setError(msg);

@@ -1,8 +1,8 @@
 import { useState, useCallback } from "react";
-import type { NoteContext } from "../api/context";
+import type { MergedContextItem } from "../hooks/useContextItems";
 
 interface ContextCardProps {
-  item: NoteContext;
+  item: MergedContextItem;
   /** Max size in bytes across all items, for relative size bar */
   maxSize: number;
   onRemove: (id: string) => void;
@@ -71,12 +71,18 @@ export function ContextCard({ item, maxSize, onRemove }: ContextCardProps) {
   const contentSize = item.content_cache?.length ?? 0;
   const sizeRatio = maxSize > 0 ? contentSize / maxSize : 0;
   const preview = getPreview(item.content_cache);
+  const isFromSet = !!item.fromSet;
 
   return (
     <div
-      className="group rounded-lg bg-surface-3/50 hover:bg-surface-3 transition-colors mb-2 cursor-pointer"
+      className={`group rounded-lg transition-colors mb-2 cursor-pointer ${
+        isFromSet
+          ? "bg-surface-3/30 hover:bg-surface-3/50 opacity-70"
+          : "bg-surface-3/50 hover:bg-surface-3"
+      }`}
       onClick={handleToggle}
       data-testid="context-card"
+      data-from-set={item.fromSet ?? undefined}
     >
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2">
@@ -84,11 +90,19 @@ export function ContextCard({ item, maxSize, onRemove }: ContextCardProps) {
           {typeIcon(item.type)}
         </span>
         <span
-          className="text-sm text-text-primary truncate flex-1"
+          className={`text-sm truncate flex-1 ${isFromSet ? "text-text-secondary" : "text-text-primary"}`}
           data-testid="context-card-label"
         >
           {item.label}
         </span>
+        {isFromSet && (
+          <span
+            className="text-[9px] text-text-tertiary opacity-50 select-none"
+            data-testid="context-card-set-name"
+          >
+            {item.fromSet}
+          </span>
+        )}
         <span className="text-[10px] text-text-tertiary tabular-nums">
           {formatSize(contentSize)}
         </span>

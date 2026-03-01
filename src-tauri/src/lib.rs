@@ -5,7 +5,7 @@ mod import;
 use agent::bridge::PiBridge;
 use agent::types::{CreateSessionRequest, SessionState};
 use serde::{Deserialize, Serialize};
-use db::store::{self, CreateNote, CreateNoteContext, Note, NoteContext, NoteFilter, NoteLink, Tag, UpdateNote};
+use db::store::{self, AssembledContext, ContextSet, ContextSetItem, CreateContextSet, CreateContextSetItem, CreateNote, CreateNoteContext, Note, NoteContext, NoteFilter, NoteLink, Tag, UpdateContextSet, UpdateNote};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use tauri::{Emitter, Manager, State};
@@ -109,6 +109,68 @@ fn remove_note_context(state: State<'_, AppState>, id: String) -> Result<(), Str
 fn reorder_note_context(state: State<'_, AppState>, id: String, sort_order: i32) -> Result<(), String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
     store::reorder_note_context(&conn, &id, sort_order)
+}
+
+// ── Context Set Commands ───────────────────────────────────────────────
+
+#[tauri::command]
+fn create_context_set(state: State<'_, AppState>, input: CreateContextSet) -> Result<ContextSet, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    store::create_context_set(&conn, &input)
+}
+
+#[tauri::command]
+fn get_context_set(state: State<'_, AppState>, id: String) -> Result<Option<ContextSet>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    store::get_context_set(&conn, &id)
+}
+
+#[tauri::command]
+fn update_context_set(state: State<'_, AppState>, id: String, input: UpdateContextSet) -> Result<ContextSet, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    store::update_context_set(&conn, &id, &input)
+}
+
+#[tauri::command]
+fn delete_context_set(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    store::delete_context_set(&conn, &id)
+}
+
+#[tauri::command]
+fn list_context_sets(state: State<'_, AppState>) -> Result<Vec<ContextSet>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    store::list_context_sets(&conn)
+}
+
+#[tauri::command]
+fn add_context_set_item(state: State<'_, AppState>, input: CreateContextSetItem) -> Result<ContextSetItem, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    store::add_context_set_item(&conn, &input)
+}
+
+#[tauri::command]
+fn list_context_set_items(state: State<'_, AppState>, context_set_id: String) -> Result<Vec<ContextSetItem>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    store::list_context_set_items(&conn, &context_set_id)
+}
+
+#[tauri::command]
+fn remove_context_set_item(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    store::remove_context_set_item(&conn, &id)
+}
+
+#[tauri::command]
+fn find_context_sets_by_tags(state: State<'_, AppState>, tags: Vec<String>) -> Result<Vec<ContextSet>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    store::find_context_sets_by_tags(&conn, &tags)
+}
+
+#[tauri::command]
+fn assemble_context_for_tags(state: State<'_, AppState>, tags: Vec<String>) -> Result<Vec<AssembledContext>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    store::assemble_context_for_tags(&conn, &tags)
 }
 
 #[tauri::command]
@@ -325,6 +387,16 @@ pub fn run() {
             list_note_context,
             remove_note_context,
             reorder_note_context,
+            create_context_set,
+            get_context_set,
+            update_context_set,
+            delete_context_set,
+            list_context_sets,
+            add_context_set_item,
+            list_context_set_items,
+            remove_context_set_item,
+            find_context_sets_by_tags,
+            assemble_context_for_tags,
             read_file_content,
             get_file_meta,
             import_claude_export,

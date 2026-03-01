@@ -14,6 +14,7 @@ import { ContextTray, ContextBadge } from "./ContextTray";
 import { ContextCard } from "./ContextCard";
 import { ContextSearch } from "./ContextSearch";
 import { useContextItems } from "../hooks/useContextItems";
+import { useContextSets } from "../hooks/useContextSets";
 
 export type PageMode = "document" | "conversation";
 
@@ -47,12 +48,33 @@ export function Page({ ready }: { ready: boolean }) {
     [],
   );
 
+  const contextAssemblerRef = useRef<(() => Promise<string>) | null>(null);
+
   const conversation = useConversation({
     onError: onConversationError,
+    contextAssembler: contextAssemblerRef,
   });
 
-  // ── Context items ────────────────────────────────────────────────
-  const context = useContextItems(activeNoteId);
+  // ── Context sets (tag-triggered) ──────────────────────────────────
+  const noteTags = noteMode.tag ? [noteMode.tag] : [];
+  const contextSets = useContextSets(noteTags);
+
+  // ── Context items (merged with set items) ────────────────────────
+  const context = useContextItems(activeNoteId, contextSets.matchedSets);
+
+  // Wire context assembler for pi injection
+  useEffect(() => {
+    contextAssemblerRef.current = async () => {
+      const assembled = await contextSets.assembleContent();
+      if (assembled.length === 0) return "";
+
+      const parts = assembled.map((a) => {
+        const header = `## ${a.label} (from set: ${a.set_name})`;
+        return a.content ? `${header}\n\`\`\`\n${a.content}\n\`\`\`` : header;
+      });
+      return `\n\n--- Context ---\n${parts.join("\n\n")}`;
+    };
+  }, [contextSets.assembleContent]);
 
   // ── Note persistence ──────────────────────────────────────────────
   const activeNoteIdRef = useRef(activeNoteId);
@@ -444,14 +466,14 @@ export function Page({ ready }: { ready: boolean }) {
             else await context.refresh();
           }}
         />
-        {context.items.length > 0 && (() => {
-          const maxSize = Math.max(...context.items.map((i) => i.content_cache?.length ?? 0));
-          return context.items.map((item) => (
+        {context.mergedItems.length > 0 && (() => {
+          const maxSize = Math.max(...context.mergedItems.map((i) => i.content_cache?.length ?? 0));
+          return context.mergedItems.map((item) => (
             <ContextCard
               key={item.id}
               item={item}
               maxSize={maxSize}
-              onRemove={context.remove}
+              onRemove={item.fromSet ? () => {} : context.remove}
             />
           ));
         })()}

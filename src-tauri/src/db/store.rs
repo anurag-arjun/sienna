@@ -496,6 +496,12 @@ pub fn reorder_note_context(conn: &Connection, id: &str, sort_order: i32) -> Res
     Ok(())
 }
 
+pub fn clear_note_context(conn: &Connection, note_id: &str) -> Result<(), String> {
+    conn.execute("DELETE FROM note_context WHERE note_id = ?1", params![note_id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 pub fn update_note_context_cache(conn: &Connection, id: &str, content_cache: &str) -> Result<(), String> {
     conn.execute(
         "UPDATE note_context SET content_cache = ?1 WHERE id = ?2",
@@ -503,6 +509,250 @@ pub fn update_note_context_cache(conn: &Connection, id: &str, content_cache: &st
     )
     .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+// ── Context Sets ───────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextSet {
+    pub id: String,
+    pub name: String,
+    pub trigger_tags: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextSetItem {
+    pub id: String,
+    pub context_set: String,
+    #[serde(rename = "type")]
+    pub item_type: String,
+    pub reference: String,
+    pub label: String,
+    pub pinned: bool,
+    pub sort_order: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateContextSet {
+    pub name: String,
+    pub trigger_tags: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateContextSet {
+    pub name: Option<String>,
+    pub trigger_tags: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateContextSetItem {
+    pub context_set: String,
+    #[serde(rename = "type")]
+    pub item_type: String,
+    pub reference: String,
+    pub label: String,
+    pub pinned: Option<bool>,
+    pub sort_order: Option<i32>,
+}
+
+fn parse_trigger_tags(json_str: &str) -> Vec<String> {
+    serde_json::from_str(json_str).unwrap_or_default()
+}
+
+pub fn create_context_set(conn: &Connection, input: &CreateContextSet) -> Result<ContextSet, String> {
+    let id = uuid::Uuid::new_v4().to_string();
+    let tags_json = serde_json::to_string(&input.trigger_tags).map_err(|e| e.to_string())?;
+
+    conn.execute(
+        "INSERT INTO context_sets (id, name, trigger_tags) VALUES (?1, ?2, ?3)",
+        params![id, input.name, tags_json],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(ContextSet {
+        id,
+        name: input.name.clone(),
+        trigger_tags: input.trigger_tags.clone(),
+    })
+}
+
+pub fn get_context_set(conn: &Connection, id: &str) -> Result<Option<ContextSet>, String> {
+    conn.query_row(
+        "SELECT id, name, trigger_tags FROM context_sets WHERE id = ?1",
+        params![id],
+        |row| {
+            let tags_str: String = row.get(2)?;
+            Ok(ContextSet {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                trigger_tags: parse_trigger_tags(&tags_str),
+            })
+        },
+    )
+    .optional()
+    .map_err(|e| e.to_string())
+}
+
+pub fn update_context_set(conn: &Connection, id: &str, input: &UpdateContextSet) -> Result<ContextSet, String> {
+    let existing = get_context_set(conn, id)?
+        .ok_or_else(|| format!("Context set not found: {}", id))?;
+
+    let name = input.name.as_deref().unwrap_or(&existing.name);
+    let trigger_tags = input.trigger_tags.as_ref().unwrap_or(&existing.trigger_tags);
+    let tags_json = serde_json::to_string(trigger_tags).map_err(|e| e.to_string())?;
+
+    conn.execute(
+        "UPDATE context_sets SET name = ?1, trigger_tags = ?2 WHERE id = ?3",
+        params![name, tags_json, id],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(ContextSet {
+        id: id.to_string(),
+        name: name.to_string(),
+        trigger_tags: trigger_tags.clone(),
+    })
+}
+
+pub fn delete_context_set(conn: &Connection, id: &str) -> Result<(), String> {
+    conn.execute("DELETE FROM context_sets WHERE id = ?1", params![id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn list_context_sets(conn: &Connection) -> Result<Vec<ContextSet>, String> {
+    let mut stmt = conn
+        .prepare("SELECT id, name, trigger_tags FROM context_sets ORDER BY name")
+        .map_err(|e| e.to_string())?;
+
+    let sets = stmt
+        .query_map([], |row| {
+            let tags_str: String = row.get(2)?;
+            Ok(ContextSet {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                trigger_tags: parse_trigger_tags(&tags_str),
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(sets)
+}
+
+/// Find all context sets whose trigger_tags contain any of the given tags.
+pub fn find_context_sets_by_tags(conn: &Connection, tags: &[String]) -> Result<Vec<ContextSet>, String> {
+    if tags.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let all_sets = list_context_sets(conn)?;
+    Ok(all_sets
+        .into_iter()
+        .filter(|set| set.trigger_tags.iter().any(|t| tags.contains(t)))
+        .collect())
+}
+
+// ── Context Set Items ──────────────────────────────────────────────────
+
+pub fn add_context_set_item(conn: &Connection, input: &CreateContextSetItem) -> Result<ContextSetItem, String> {
+    let id = uuid::Uuid::new_v4().to_string();
+    let pinned = input.pinned.unwrap_or(false);
+    let sort_order = input.sort_order.unwrap_or(0);
+
+    conn.execute(
+        "INSERT INTO context_items (id, context_set, type, reference, label, pinned, sort_order)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![id, input.context_set, input.item_type, input.reference, input.label, pinned, sort_order],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(ContextSetItem {
+        id,
+        context_set: input.context_set.clone(),
+        item_type: input.item_type.clone(),
+        reference: input.reference.clone(),
+        label: input.label.clone(),
+        pinned,
+        sort_order,
+    })
+}
+
+pub fn list_context_set_items(conn: &Connection, context_set_id: &str) -> Result<Vec<ContextSetItem>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, context_set, type, reference, label, pinned, sort_order
+             FROM context_items WHERE context_set = ?1 ORDER BY sort_order ASC",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let items = stmt
+        .query_map(params![context_set_id], |row| {
+            Ok(ContextSetItem {
+                id: row.get(0)?,
+                context_set: row.get(1)?,
+                item_type: row.get(2)?,
+                reference: row.get(3)?,
+                label: row.get(4)?,
+                pinned: row.get(5)?,
+                sort_order: row.get(6)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(items)
+}
+
+pub fn remove_context_set_item(conn: &Connection, id: &str) -> Result<(), String> {
+    conn.execute("DELETE FROM context_items WHERE id = ?1", params![id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Assemble all context content for a set of tags.
+/// Returns combined content from all matching context sets' items (reading file content).
+pub fn assemble_context_for_tags(conn: &Connection, tags: &[String]) -> Result<Vec<AssembledContext>, String> {
+    let sets = find_context_sets_by_tags(conn, tags)?;
+    let mut assembled = Vec::new();
+
+    for set in &sets {
+        let items = list_context_set_items(conn, &set.id)?;
+        for item in items {
+            // Read file content for local items
+            let content = if item.item_type == "local" {
+                std::fs::read_to_string(&item.reference).ok()
+            } else {
+                None
+            };
+
+            assembled.push(AssembledContext {
+                set_name: set.name.clone(),
+                set_id: set.id.clone(),
+                item_id: item.id.clone(),
+                item_type: item.item_type.clone(),
+                reference: item.reference.clone(),
+                label: item.label.clone(),
+                content,
+            });
+        }
+    }
+
+    Ok(assembled)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssembledContext {
+    pub set_name: String,
+    pub set_id: String,
+    pub item_id: String,
+    #[serde(rename = "type")]
+    pub item_type: String,
+    pub reference: String,
+    pub label: String,
+    pub content: Option<String>,
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────
@@ -821,6 +1071,153 @@ mod tests {
         let items = list_note_context(&conn, &note.id).unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].label, "lib.rs");
+    }
+
+    #[test]
+    fn test_context_set_crud() {
+        let conn = init_memory_db().unwrap();
+
+        // Create context set
+        let set = create_context_set(
+            &conn,
+            &CreateContextSet {
+                name: "Rust Project".to_string(),
+                trigger_tags: vec!["plan".to_string(), "blog".to_string()],
+            },
+        )
+        .unwrap();
+        assert_eq!(set.name, "Rust Project");
+        assert_eq!(set.trigger_tags, vec!["plan", "blog"]);
+
+        // Get
+        let fetched = get_context_set(&conn, &set.id).unwrap().unwrap();
+        assert_eq!(fetched.name, "Rust Project");
+        assert_eq!(fetched.trigger_tags.len(), 2);
+
+        // Update
+        let updated = update_context_set(
+            &conn,
+            &set.id,
+            &UpdateContextSet {
+                name: Some("Rust Core".to_string()),
+                trigger_tags: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(updated.name, "Rust Core");
+        assert_eq!(updated.trigger_tags.len(), 2); // unchanged
+
+        // List
+        let sets = list_context_sets(&conn).unwrap();
+        assert_eq!(sets.len(), 1);
+
+        // Delete
+        delete_context_set(&conn, &set.id).unwrap();
+        assert!(get_context_set(&conn, &set.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_context_set_items() {
+        let conn = init_memory_db().unwrap();
+
+        let set = create_context_set(
+            &conn,
+            &CreateContextSet {
+                name: "My Set".to_string(),
+                trigger_tags: vec!["chat".to_string()],
+            },
+        )
+        .unwrap();
+
+        // Add items
+        let item1 = add_context_set_item(
+            &conn,
+            &CreateContextSetItem {
+                context_set: set.id.clone(),
+                item_type: "local".to_string(),
+                reference: "/path/to/file.rs".to_string(),
+                label: "file.rs".to_string(),
+                pinned: Some(true),
+                sort_order: Some(0),
+            },
+        )
+        .unwrap();
+        assert!(item1.pinned);
+
+        add_context_set_item(
+            &conn,
+            &CreateContextSetItem {
+                context_set: set.id.clone(),
+                item_type: "url".to_string(),
+                reference: "https://example.com".to_string(),
+                label: "Example".to_string(),
+                pinned: None,
+                sort_order: Some(1),
+            },
+        )
+        .unwrap();
+
+        // List
+        let items = list_context_set_items(&conn, &set.id).unwrap();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].label, "file.rs");
+        assert_eq!(items[1].label, "Example");
+
+        // Remove
+        remove_context_set_item(&conn, &item1.id).unwrap();
+        let items = list_context_set_items(&conn, &set.id).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].label, "Example");
+
+        // Cascade delete: deleting set removes items
+        delete_context_set(&conn, &set.id).unwrap();
+        let items = list_context_set_items(&conn, &set.id).unwrap();
+        assert_eq!(items.len(), 0);
+    }
+
+    #[test]
+    fn test_find_context_sets_by_tags() {
+        let conn = init_memory_db().unwrap();
+
+        create_context_set(
+            &conn,
+            &CreateContextSet {
+                name: "Plan Context".to_string(),
+                trigger_tags: vec!["plan".to_string()],
+            },
+        )
+        .unwrap();
+
+        create_context_set(
+            &conn,
+            &CreateContextSet {
+                name: "Chat Context".to_string(),
+                trigger_tags: vec!["chat".to_string(), "scratch".to_string()],
+            },
+        )
+        .unwrap();
+
+        // Match plan
+        let found = find_context_sets_by_tags(&conn, &["plan".to_string()]).unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].name, "Plan Context");
+
+        // Match chat
+        let found = find_context_sets_by_tags(&conn, &["chat".to_string()]).unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].name, "Chat Context");
+
+        // Match scratch (in Chat Context)
+        let found = find_context_sets_by_tags(&conn, &["scratch".to_string()]).unwrap();
+        assert_eq!(found.len(), 1);
+
+        // No match
+        let found = find_context_sets_by_tags(&conn, &["blog".to_string()]).unwrap();
+        assert_eq!(found.len(), 0);
+
+        // Empty tags
+        let found = find_context_sets_by_tags(&conn, &[]).unwrap();
+        assert_eq!(found.len(), 0);
     }
 
     #[test]
