@@ -6,6 +6,7 @@ import { keymap, placeholder, drawSelection, EditorView } from "@codemirror/view
 import { EditorState } from "@codemirror/state";
 import { moodTheme } from "./theme";
 import { inlineMarkdownRendering } from "./inline-render";
+import { inlineInvoke, type InlineInvokeOptions } from "./inline-invoke";
 
 /**
  * Base set of CodeMirror extensions for Mood Editor.
@@ -14,6 +15,7 @@ import { inlineMarkdownRendering } from "./inline-render";
 export function createBaseExtensions(options?: {
   placeholder?: string;
   onChange?: (content: string) => void;
+  onInlineInvoke?: InlineInvokeOptions["onSubmit"];
 }) {
   return [
     // Markdown language with nested code block highlighting
@@ -58,7 +60,10 @@ export function createBaseExtensions(options?: {
         ]
       : []),
 
-    // Disable default tab behavior (we'll use Tab for AI invocation later)
+    // Inline AI invocation (Tab at line start)
+    inlineInvoke({ onSubmit: options?.onInlineInvoke }),
+
+    // Tab size for indentation
     EditorState.tabSize.of(2),
   ];
 }

@@ -74,6 +74,42 @@ body {
   animation: blink 1s step-end infinite;
 }
 
+/* Inline invoke widget */
+.cm-invoke-widget {
+  padding: 4px 0;
+}
+
+.cm-invoke-line {
+  height: 2px;
+  background: linear-gradient(90deg, var(--color-accent-warm), transparent);
+  border-radius: 1px;
+  margin-bottom: 4px;
+  animation: invoke-glow 2s ease-in-out infinite alternate;
+}
+
+@keyframes invoke-glow {
+  from { opacity: 0.6; }
+  to { opacity: 1; }
+}
+
+.cm-invoke-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--color-accent-warm);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-style: italic;
+  padding: 2px 0;
+  caret-color: var(--color-accent-warm);
+}
+
+.cm-invoke-input::placeholder {
+  color: var(--color-text-tertiary);
+  opacity: 0.6;
+}
+
 /* Selection */
 ::selection {
   background-color: color-mix(in srgb, var(--color-accent-warm) 30%, transparent);
