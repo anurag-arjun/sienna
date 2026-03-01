@@ -15,6 +15,8 @@ import { ContextCard } from "./ContextCard";
 import { ContextSearch } from "./ContextSearch";
 import { useContextItems } from "../hooks/useContextItems";
 import { useContextSets } from "../hooks/useContextSets";
+import { ModelPicker } from "./ModelPicker";
+import type { ModelInfo } from "../lib/models";
 
 export type PageMode = "document" | "conversation";
 
@@ -289,6 +291,14 @@ export function Page({ ready }: { ready: boolean }) {
   const handleOpenLibrary = useCallback(() => setLibraryOpen(true), []);
   const handleCloseLibrary = useCallback(() => setLibraryOpen(false), []);
 
+  // Model switching
+  const switchModelRef = useRef(conversation.switchModel);
+  switchModelRef.current = conversation.switchModel;
+
+  const handleModelSelect = useCallback(async (model: ModelInfo) => {
+    await switchModelRef.current(model.provider, model.id);
+  }, []);
+
   // Distill: Cmd+D converts conversation to document
   const messagesRef = useRef(conversation.messages);
   messagesRef.current = conversation.messages;
@@ -442,6 +452,11 @@ export function Page({ ready }: { ready: boolean }) {
         >
           {noteMode.icon} {noteMode.label}
         </button>
+        <ModelPicker
+          currentModelId={conversation.activeModelId}
+          onSelect={handleModelSelect}
+          disabled={conversation.streaming}
+        />
         <ContextBadge count={context.count} onClick={() => setTrayOpen(true)} />
       </div>
 

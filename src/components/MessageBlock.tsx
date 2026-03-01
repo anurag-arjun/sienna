@@ -1,3 +1,5 @@
+import { modelAttribution } from "../lib/models";
+
 /**
  * MessageBlock — a single message in the conversation flow.
  *
@@ -50,8 +52,11 @@ export function MessageBlock({
       {/* Model attribution whisper (assistant only) */}
       {!isUser && model && !isStreaming && (
         <div className="mt-1">
-          <span className="text-text-tertiary text-[10px] opacity-40 select-none">
-            {model}
+          <span
+            className="text-text-tertiary text-[10px] opacity-40 select-none"
+            data-testid="model-attribution"
+          >
+            {modelAttribution(model)}
           </span>
         </div>
       )}

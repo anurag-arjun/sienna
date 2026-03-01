@@ -30,6 +30,8 @@ export interface UseConversationReturn {
   streamingContent: string;
   /** Session ID (null if not connected) */
   sessionId: string | null;
+  /** Current active model ID */
+  activeModelId: string;
   /** Send a message to the AI */
   send: (text: string) => Promise<void>;
   /** Steer the current generation */
@@ -40,6 +42,8 @@ export interface UseConversationReturn {
   connect: (options?: CreateSessionRequest) => Promise<string>;
   /** Destroy the session */
   disconnect: () => Promise<void>;
+  /** Switch model mid-conversation */
+  switchModel: (provider: string, modelId: string) => Promise<void>;
   /** Last error message */
   error: string | null;
 }
@@ -58,6 +62,7 @@ export function useConversation(
   const [streamingContent, setStreamingContent] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [activeModelId, setActiveModelId] = useState("claude-sonnet-4-20250514");
 
   // Refs for stable callback access (avoids dependency chains)
   const streamingRef = useRef("");
@@ -67,6 +72,8 @@ export function useConversation(
   const onErrorRef = useRef(options.onError);
   const sessionOptionsRef = useRef(options.sessionOptions);
   const contextAssemblerRef = options.contextAssembler ?? useRef(null);
+  const activeModelIdRef = useRef(activeModelId);
+  activeModelIdRef.current = activeModelId;
 
   // Keep refs in sync
   useEffect(() => {
@@ -105,15 +112,17 @@ export function useConversation(
           break;
 
         case "agent_end": {
-          // Finalize: move streaming content into messages
+          // Finalize: move streaming content into messages with model attribution
           const finalContent = streamingRef.current;
           if (finalContent) {
+            const modelId = activeModelIdRef.current;
             setMessages((prev) => [
               ...prev,
               {
                 id: nextMessageId(),
                 role: "assistant",
                 content: finalContent,
+                model: modelId,
               },
             ]);
           }
@@ -248,6 +257,22 @@ export function useConversation(
     }
   }, [nextMessageId]);
 
+  // Switch model mid-conversation — stable
+  const switchModel = useCallback(async (provider: string, modelId: string) => {
+    const sid = sessionIdRef.current;
+    if (!sid) {
+      setActiveModelId(modelId);
+      return;
+    }
+    try {
+      await piApi.setModel(sid, provider, modelId);
+      setActiveModelId(modelId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg);
+    }
+  }, []);
+
   // Disconnect — stable
   const disconnect = useCallback(async () => {
     if (unlistenRef.current) {
@@ -279,11 +304,13 @@ export function useConversation(
     streaming,
     streamingContent,
     sessionId,
+    activeModelId,
     send,
     steer,
     abort,
     connect,
     disconnect,
+    switchModel,
     error,
   };
 }
