@@ -5,6 +5,7 @@ import { searchKeymap } from "@codemirror/search";
 import { keymap, placeholder, drawSelection, EditorView } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { moodTheme } from "./theme";
+import { inlineMarkdownRendering } from "./inline-render";
 
 /**
  * Base set of CodeMirror extensions for Mood Editor.
@@ -34,6 +35,9 @@ export function createBaseExtensions(options?: {
 
     // Theme
     moodTheme,
+
+    // Hybrid inline Markdown rendering (cursor-aware)
+    inlineMarkdownRendering(),
 
     // Line wrapping — writing app, not code editor
     EditorView.lineWrapping,
