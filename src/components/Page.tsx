@@ -5,6 +5,7 @@ import {
   startGeneration,
   insertDelta,
   completeGeneration,
+  dismissGeneration,
   conversationField,
   startStreaming,
   streamDelta,
@@ -241,7 +242,7 @@ export function Page({ ready }: { ready: boolean }) {
             v.dispatch({
               effects: streamDelta.of({ id: conversationId, delta: event.delta }),
             });
-          } else if (event.type === "agent_end") {
+          } else if (event.type === "agent_end" || event.type === "error") {
             v.dispatch({
               effects: completeStreaming.of({ id: conversationId }),
             });
@@ -300,12 +301,35 @@ export function Page({ ready }: { ready: boolean }) {
             v.dispatch(insertDelta(gen, event.delta));
           }
         } else if (event.type === "agent_end") {
-          v.dispatch({ effects: completeGeneration.of() });
+          const gen = v.state.field(generationField);
+          if (gen.phase === "generating" && gen.generatedLength === 0) {
+            // Empty response — dismiss silently
+            v.dispatch({ effects: dismissGeneration.of() });
+          } else {
+            v.dispatch({ effects: completeGeneration.of() });
+          }
           // Clean up
           inlineUnlistenRef.current?.();
           inlineUnlistenRef.current = null;
           piApi.destroySession(sessionId).catch(() => {});
           inlineSessionRef.current = null;
+        } else if (event.type === "error") {
+          const gen = v.state.field(generationField);
+          // Remove any partially generated text
+          if (gen.generatedLength > 0) {
+            v.dispatch({
+              changes: { from: gen.startPos, to: gen.startPos + gen.generatedLength },
+              effects: dismissGeneration.of(),
+            });
+          } else {
+            v.dispatch({ effects: dismissGeneration.of() });
+          }
+          // Clean up
+          inlineUnlistenRef.current?.();
+          inlineUnlistenRef.current = null;
+          piApi.destroySession(sessionId).catch(() => {});
+          inlineSessionRef.current = null;
+          console.error("Inline generation error:", event.message);
         }
       });
       inlineUnlistenRef.current = unlisten;
@@ -314,6 +338,29 @@ export function Page({ ready }: { ready: boolean }) {
       await piApi.prompt(sessionId, instruction);
     } catch (err) {
       console.error("Inline generation failed:", err);
+      // Clean up on failure
+      const v = editorViewRef.current;
+      if (v) {
+        const gen = v.state.field(generationField);
+        if (gen.phase !== "idle") {
+          if (gen.generatedLength > 0) {
+            v.dispatch({
+              changes: { from: gen.startPos, to: gen.startPos + gen.generatedLength },
+              effects: dismissGeneration.of(),
+            });
+          } else {
+            v.dispatch({ effects: dismissGeneration.of() });
+          }
+        }
+      }
+      if (inlineSessionRef.current) {
+        piApi.destroySession(inlineSessionRef.current).catch(() => {});
+        inlineSessionRef.current = null;
+      }
+      if (inlineUnlistenRef.current) {
+        inlineUnlistenRef.current();
+        inlineUnlistenRef.current = null;
+      }
     }
   }, []);
 

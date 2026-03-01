@@ -172,7 +172,11 @@ export function inlineGenerate(options?: InlineGenerateOptions): Extension {
             gen.startPos,
             gen.startPos + gen.generatedLength,
           );
-          view.dispatch({ effects: acceptGeneration.of() });
+          const endPos = gen.startPos + gen.generatedLength;
+          view.dispatch({
+            effects: acceptGeneration.of(),
+            selection: { anchor: endPos },
+          });
           options?.onAccept?.(generatedText);
           return true;
         },

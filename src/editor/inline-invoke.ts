@@ -15,6 +15,7 @@ import {
   type Extension,
   type EditorState,
 } from "@codemirror/state";
+import { generationField } from "./inline-generate";
 import {
   EditorView,
   Decoration,
@@ -194,6 +195,10 @@ export function inlineInvoke(options?: InlineInvokeOptions): Extension {
         run(view) {
           const invokeState = view.state.field(invokeField);
           if (invokeState.active) return false; // Already active
+
+          // Don't activate during generation or preview
+          const gen = view.state.field(generationField, false);
+          if (gen && gen.phase !== "idle") return false;
 
           if (!isAtLineStart(view.state)) return false;
 
