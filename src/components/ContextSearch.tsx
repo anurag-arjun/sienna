@@ -6,12 +6,52 @@ import {
   sourceIcon,
   isUrl,
   isFilePath,
+  isGitHubRef,
+  parseGitHubRef,
   type SearchResult,
   type SearchSourceType,
 } from "../lib/context-search";
 import { notesApi } from "../api/notes";
 import { contextApi } from "../api/context";
+import { githubApi } from "../api/github";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
+
+/**
+ * Fetch content for a GitHub reference string.
+ * Format: "github:type:owner/repo..." where type is file, issue, or tree.
+ */
+async function fetchGitHubContent(reference: string): Promise<string | null> {
+  try {
+    if (reference.startsWith("github:file:")) {
+      const parts = reference.slice("github:file:".length);
+      const [owner, repo, ...pathParts] = parts.split("/");
+      const path = pathParts.join("/");
+      return await githubApi.getFile(owner, repo, path);
+    }
+    if (reference.startsWith("github:issue:")) {
+      const match = reference.match(/github:issue:(.+?)\/(.+?)#(\d+)/);
+      if (!match) return null;
+      return await githubApi.getIssue(match[1], match[2], parseInt(match[3], 10));
+    }
+    if (reference.startsWith("github:tree:")) {
+      const parts = reference.slice("github:tree:".length);
+      const [owner, repo] = parts.split("/");
+      const tree = await githubApi.getTree(owner, repo);
+      // Format as a file listing
+      const files = tree
+        .filter((e) => e.entry_type === "blob")
+        .map((e) => {
+          const size = e.size ? ` (${formatSize(e.size)})` : "";
+          return `${e.path}${size}`;
+        });
+      return `# ${owner}/${repo} — File Tree\n\n${files.join("\n")}`;
+    }
+    return null;
+  } catch (err) {
+    console.error("GitHub fetch failed:", err);
+    return null;
+  }
+}
 
 interface ContextSearchProps {
   /** Note ID to attach context items to */
@@ -101,6 +141,38 @@ export function ContextSearch({ noteId, onAdd }: ContextSearchProps) {
           });
         }
 
+        // GitHub reference — parse and show options
+        if (sources.includes("github") && isGitHubRef(trimmed)) {
+          const ref_ = parseGitHubRef(trimmed);
+          if (ref_) {
+            if (ref_.number) {
+              // Issue or PR reference
+              allResults.push({
+                source: "github",
+                label: `${ref_.owner}/${ref_.repo}#${ref_.number}`,
+                reference: `github:issue:${ref_.owner}/${ref_.repo}#${ref_.number}`,
+                preview: "Fetch issue or PR",
+              });
+            } else if (ref_.path) {
+              // File reference
+              allResults.push({
+                source: "github",
+                label: `${ref_.owner}/${ref_.repo}/${ref_.path}`,
+                reference: `github:file:${ref_.owner}/${ref_.repo}/${ref_.path}`,
+                preview: "Fetch file from repo",
+              });
+            } else {
+              // Repo root — show tree
+              allResults.push({
+                source: "github",
+                label: `${ref_.owner}/${ref_.repo}`,
+                reference: `github:tree:${ref_.owner}/${ref_.repo}`,
+                preview: "Browse repository tree",
+              });
+            }
+          }
+        }
+
         setResults(allResults);
       } finally {
         setSearching(false);
@@ -138,7 +210,18 @@ export function ContextSearch({ noteId, onAdd }: ContextSearchProps) {
               label: note.title || "Untitled",
               content_cache: note.content ?? "",
             });
-            // Trigger refresh via onAdd with empty — caller handles refresh
+            await onAdd("");
+          }
+        } else if (result.source === "github") {
+          const content = await fetchGitHubContent(result.reference);
+          if (content) {
+            await contextApi.addNoteContext({
+              note_id: noteId,
+              type: "github",
+              reference: result.reference,
+              label: result.label,
+              content_cache: content,
+            });
             await onAdd("");
           }
         }

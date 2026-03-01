@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   isUrl,
   isFilePath,
+  isGitHubRef,
+  parseGitHubRef,
   classifyQuery,
   groupBySource,
   sourceLabel,
@@ -39,6 +41,54 @@ describe("context-search", () => {
     });
   });
 
+  describe("isGitHubRef", () => {
+    it("detects owner/repo", () => {
+      expect(isGitHubRef("facebook/react")).toBe(true);
+      expect(isGitHubRef("anurag-arjun/mood-editor")).toBe(true);
+    });
+
+    it("detects owner/repo#number", () => {
+      expect(isGitHubRef("owner/repo#42")).toBe(true);
+    });
+
+    it("detects owner/repo/path", () => {
+      expect(isGitHubRef("owner/repo/src/main.rs")).toBe(true);
+    });
+
+    it("rejects non-GitHub refs", () => {
+      expect(isGitHubRef("hello")).toBe(false);
+      expect(isGitHubRef("just-one-part")).toBe(false);
+      expect(isGitHubRef("https://github.com")).toBe(false);
+      expect(isGitHubRef("/absolute/path")).toBe(false);
+    });
+  });
+
+  describe("parseGitHubRef", () => {
+    it("parses owner/repo", () => {
+      expect(parseGitHubRef("owner/repo")).toEqual({ owner: "owner", repo: "repo" });
+    });
+
+    it("parses owner/repo#123", () => {
+      expect(parseGitHubRef("owner/repo#123")).toEqual({
+        owner: "owner",
+        repo: "repo",
+        number: 123,
+      });
+    });
+
+    it("parses owner/repo/path/to/file.ts", () => {
+      expect(parseGitHubRef("owner/repo/src/main.ts")).toEqual({
+        owner: "owner",
+        repo: "repo",
+        path: "src/main.ts",
+      });
+    });
+
+    it("returns null for invalid refs", () => {
+      expect(parseGitHubRef("notaref")).toBeNull();
+    });
+  });
+
   describe("classifyQuery", () => {
     it("returns url for URLs", () => {
       expect(classifyQuery("https://example.com")).toEqual(["url"]);
@@ -46,6 +96,11 @@ describe("context-search", () => {
 
     it("returns local for file paths", () => {
       expect(classifyQuery("/home/file.rs")).toEqual(["local"]);
+    });
+
+    it("returns github for owner/repo patterns", () => {
+      expect(classifyQuery("facebook/react")).toEqual(["github"]);
+      expect(classifyQuery("owner/repo#42")).toEqual(["github"]);
     });
 
     it("returns local+note for generic text", () => {
@@ -80,6 +135,7 @@ describe("context-search", () => {
       expect(sourceLabel("local")).toBe("Files");
       expect(sourceLabel("note")).toBe("Notes");
       expect(sourceLabel("url")).toBe("URLs");
+      expect(sourceLabel("github")).toBe("GitHub");
     });
   });
 });

@@ -1,5 +1,6 @@
 mod agent;
 mod db;
+mod github;
 mod import;
 
 use agent::bridge::PiBridge;
@@ -236,6 +237,94 @@ async fn import_claude_export(
     ))
 }
 
+// ── GitHub Commands ────────────────────────────────────────────────────
+
+#[tauri::command]
+async fn github_set_pat(state: State<'_, AppState>, pat: String) -> Result<String, String> {
+    // Validate the PAT first
+    let user = github::validate_pat(&pat).await?;
+    // Store it
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    store::set_setting(&conn, "github_pat", &pat)?;
+    Ok(user.login)
+}
+
+#[tauri::command]
+fn github_get_pat(state: State<'_, AppState>) -> Result<Option<String>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    store::get_setting(&conn, "github_pat")
+}
+
+#[tauri::command]
+fn github_clear_pat(state: State<'_, AppState>) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    store::delete_setting(&conn, "github_pat")
+}
+
+fn get_pat(state: &State<'_, AppState>) -> Result<String, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    store::get_setting(&conn, "github_pat")?
+        .ok_or_else(|| "No GitHub token configured. Set one first.".to_string())
+}
+
+#[tauri::command]
+async fn github_list_repos(
+    state: State<'_, AppState>,
+    page: Option<u32>,
+) -> Result<Vec<github::GitHubRepo>, String> {
+    let pat = get_pat(&state)?;
+    github::list_repos(&pat, page.unwrap_or(1), 30).await
+}
+
+#[tauri::command]
+async fn github_get_tree(
+    state: State<'_, AppState>,
+    owner: String,
+    repo: String,
+    branch: Option<String>,
+) -> Result<Vec<github::GitHubTreeEntry>, String> {
+    let pat = get_pat(&state)?;
+    let branch = branch.unwrap_or_else(|| "HEAD".to_string());
+    github::get_tree(&pat, &owner, &repo, &branch).await
+}
+
+#[tauri::command]
+async fn github_get_file(
+    state: State<'_, AppState>,
+    owner: String,
+    repo: String,
+    path: String,
+    branch: Option<String>,
+) -> Result<String, String> {
+    let pat = get_pat(&state)?;
+    let branch = branch.unwrap_or_else(|| "HEAD".to_string());
+    github::get_file(&pat, &owner, &repo, &path, &branch).await
+}
+
+#[tauri::command]
+async fn github_get_issue(
+    state: State<'_, AppState>,
+    owner: String,
+    repo: String,
+    number: u64,
+) -> Result<String, String> {
+    let pat = get_pat(&state)?;
+    let (issue, comments) = github::get_issue(&pat, &owner, &repo, number).await?;
+    Ok(github::format_issue_context(&issue, &comments))
+}
+
+#[tauri::command]
+async fn github_get_pr_diff(
+    state: State<'_, AppState>,
+    owner: String,
+    repo: String,
+    number: u64,
+) -> Result<String, String> {
+    let pat = get_pat(&state)?;
+    let pr = github::get_pr_diff(&pat, &owner, &repo, number).await?;
+    Ok(github::format_pr_context(&pr))
+}
+
 // ── Pi Agent Commands ──────────────────────────────────────────────────
 
 #[tauri::command]
@@ -455,6 +544,14 @@ pub fn run() {
             read_file_content,
             get_file_meta,
             import_claude_export,
+            github_set_pat,
+            github_get_pat,
+            github_clear_pat,
+            github_list_repos,
+            github_get_tree,
+            github_get_file,
+            github_get_issue,
+            github_get_pr_diff,
             pi_create_session,
             pi_prompt,
             pi_steer,
