@@ -4,8 +4,9 @@ import { Conversation } from "./Conversation";
 import { ChatInput } from "./ChatInput";
 import { LibraryPanel } from "./LibraryPanel";
 import { useConversation } from "../hooks/useConversation";
-import { resolveMode, type ModeConfig } from "../lib/note-mode";
-import type { Note } from "../api/notes";
+import { resolveMode, type ModeConfig, type NoteTag } from "../lib/note-mode";
+import { buildDistillPrompt, suggestDistillTitle } from "../lib/distill";
+import { notesApi, type Note } from "../api/notes";
 
 export type PageMode = "document" | "conversation";
 
@@ -23,6 +24,7 @@ export function Page({ ready }: { ready: boolean }) {
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [activeNoteId, setActiveNoteId] = useState<string | undefined>();
   const [noteMode, setNoteMode] = useState<ModeConfig>(() => resolveMode(""));
+  const [distilling, setDistilling] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const onConversationError = useCallback(
@@ -80,7 +82,9 @@ export function Page({ ready }: { ready: boolean }) {
     }
   }, []);
 
-  // Cmd+J toggles mode, Cmd+O toggles library
+  // Cmd+J toggles mode, Cmd+O toggles library, Cmd+D distills
+  const handleDistillRef = useRef<(() => Promise<void>) | null>(null);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "j" && (e.metaKey || e.ctrlKey)) {
@@ -95,6 +99,10 @@ export function Page({ ready }: { ready: boolean }) {
         e.preventDefault();
         setLibraryOpen((prev) => !prev);
       }
+      if (e.key === "d" && (e.metaKey || e.ctrlKey) && mode === "conversation") {
+        e.preventDefault();
+        handleDistillRef.current?.();
+      }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -102,6 +110,54 @@ export function Page({ ready }: { ready: boolean }) {
 
   const handleOpenLibrary = useCallback(() => setLibraryOpen(true), []);
   const handleCloseLibrary = useCallback(() => setLibraryOpen(false), []);
+
+  // Distill: Cmd+D converts conversation to document
+  const messagesRef = useRef(conversation.messages);
+  messagesRef.current = conversation.messages;
+
+  const handleDistill = useCallback(
+    async (targetTag: NoteTag = "plan") => {
+      const msgs = messagesRef.current;
+      if (msgs.length === 0) return;
+
+      setDistilling(true);
+      try {
+        const title = suggestDistillTitle(msgs, targetTag);
+        const prompt = buildDistillPrompt(msgs, targetTag);
+
+        // Create the document note
+        const newNote = await notesApi.createNote({
+          note_type: "document",
+          title,
+          content: prompt,
+          tags: [targetTag],
+        });
+
+        // Link it to the conversation note if we have one
+        if (activeNoteId) {
+          try {
+            await notesApi.addNoteLink({
+              source_id: newNote.id,
+              target_id: activeNoteId,
+              link_type: "distilled_from",
+            });
+          } catch {
+            // Link creation is best-effort
+          }
+        }
+
+        // Switch to the new document
+        setActiveNoteId(newNote.id);
+        setMode("document");
+      } catch (err) {
+        console.error("Distill failed:", err);
+      } finally {
+        setDistilling(false);
+      }
+    },
+    [activeNoteId],
+  );
+  handleDistillRef.current = handleDistill;
 
   const handleSelectNote = useCallback((note: Note) => {
     setActiveNoteId(note.id);
@@ -163,13 +219,15 @@ export function Page({ ready }: { ready: boolean }) {
             </span>
           ) : (
             <span className="text-text-tertiary text-xs opacity-40">
-              {conversation.error
-                ? conversation.error
-                : conversation.streaming
-                  ? "Streaming…"
-                  : conversation.sessionId
-                    ? "Connected"
-                    : "No session"}
+              {distilling
+                ? "Distilling…"
+                : conversation.error
+                  ? conversation.error
+                  : conversation.streaming
+                    ? "Streaming…"
+                    : conversation.sessionId
+                      ? "Connected"
+                      : "No session"}
             </span>
           )}
         </div>

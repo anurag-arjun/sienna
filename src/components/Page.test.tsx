@@ -6,6 +6,20 @@ import { Page } from "./Page";
 vi.mock("../api/notes", () => ({
   notesApi: {
     listNotes: vi.fn().mockResolvedValue([]),
+    createNote: vi.fn().mockResolvedValue({
+      id: "distilled-1",
+      type: "document",
+      title: "#plan test",
+      content: "",
+      pi_session: null,
+      status: "active",
+      pinned: false,
+      context_set: null,
+      created_at: 0,
+      updated_at: 0,
+      tags: ["plan"],
+    }),
+    addNoteLink: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -144,6 +158,45 @@ describe("Page", () => {
     });
     // Panel should now be visible
     expect(panel.className).toContain("translate-x-0");
+  });
+
+  it("triggers distill with Ctrl+D in conversation mode", async () => {
+    mockConversation.sessionId = "test-session";
+    mockConversation.messages = [
+      { id: "m1", role: "user", content: "Hello there" },
+      { id: "m2", role: "assistant", content: "Hi! How can I help?" },
+    ];
+    render(<Page ready={true} />);
+
+    // Switch to conversation mode first
+    await act(async () => {
+      fireEvent.keyDown(window, { key: "j", ctrlKey: true });
+    });
+
+    // Now distill
+    await act(async () => {
+      fireEvent.keyDown(window, { key: "d", ctrlKey: true });
+    });
+
+    // Should have created a note
+    const { notesApi: mockNotes } = await import("../api/notes");
+    expect(vi.mocked(mockNotes.createNote)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        note_type: "document",
+        tags: ["plan"],
+      }),
+    );
+  });
+
+  it("does not distill in document mode", async () => {
+    render(<Page ready={true} />);
+
+    await act(async () => {
+      fireEvent.keyDown(window, { key: "d", ctrlKey: true });
+    });
+
+    const { notesApi: mockNotes } = await import("../api/notes");
+    expect(vi.mocked(mockNotes.createNote)).not.toHaveBeenCalled();
   });
 
   it("shows context tray indicator", () => {

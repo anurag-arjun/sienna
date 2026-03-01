@@ -67,10 +67,26 @@ export async function listNotes(filter: NoteFilter = {}): Promise<Note[]> {
   return invoke<Note[]>("list_notes", { filter });
 }
 
+export interface NoteLink {
+  source_id: string;
+  target_id: string;
+  link_type: string;
+}
+
+export async function addNoteLink(link: NoteLink): Promise<void> {
+  return invoke<void>("add_note_link", { link });
+}
+
+export async function getNoteLinks(noteId: string): Promise<NoteLink[]> {
+  return invoke<NoteLink[]>("get_note_links", { noteId });
+}
+
 export const notesApi = {
   createNote,
   getNote,
   updateNote,
   deleteNote,
   listNotes,
+  addNoteLink,
+  getNoteLinks,
 };
