@@ -1,38 +1,139 @@
-import { describe, it, expect } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { render, screen, cleanup, fireEvent, act } from "@testing-library/react";
 import { Page } from "./Page";
 
+// Mock useConversation to avoid IPC calls
+const mockConversation = {
+  messages: [],
+  streaming: false,
+  streamingContent: "",
+  sessionId: null as string | null,
+  send: vi.fn(),
+  steer: vi.fn(),
+  abort: vi.fn(),
+  connect: vi.fn().mockResolvedValue("test-session"),
+  disconnect: vi.fn(),
+  error: null as string | null,
+};
+
+vi.mock("../hooks/useConversation", () => ({
+  useConversation: () => mockConversation,
+}));
+
 describe("Page", () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    mockConversation.messages = [];
+    mockConversation.streaming = false;
+    mockConversation.streamingContent = "";
+    mockConversation.sessionId = null;
+    mockConversation.error = null;
+    vi.clearAllMocks();
+  });
 
   it("shows 'Starting…' when not ready", () => {
     render(<Page ready={false} />);
     expect(screen.getByText("Starting…")).toBeTruthy();
   });
 
-  it("renders editor when ready", () => {
+  it("renders editor in document mode when ready", () => {
     const { container } = render(<Page ready={true} />);
-    // Editor mounts — look for CM6 editor element
     expect(container.querySelector(".cm-editor")).toBeTruthy();
   });
 
-  it("shows word count area", () => {
+  it("shows word count area in document mode", () => {
     const { container } = render(<Page ready={true} />);
-    // Word count starts hidden (opacity-0) with "0 words"
-    const wordCount = container.querySelector("span");
     const spans = container.querySelectorAll("span");
     const wordSpan = Array.from(spans).find((s) =>
-      s.textContent?.includes("word")
+      s.textContent?.includes("word"),
     );
     expect(wordSpan).toBeTruthy();
   });
 
+  it("shows mode toggle", () => {
+    render(<Page ready={true} />);
+    expect(screen.getByTestId("mode-toggle")).toBeTruthy();
+    expect(screen.getByTestId("mode-toggle").textContent).toContain("write");
+  });
+
+  it("switches to conversation mode on toggle click", async () => {
+    render(<Page ready={true} />);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("mode-toggle"));
+    });
+    // Should show conversation placeholder
+    expect(screen.getByText("Start a conversation…")).toBeTruthy();
+    // Mode indicator changes
+    expect(screen.getByTestId("mode-toggle").textContent).toContain("chat");
+    // Should attempt to connect
+    expect(mockConversation.connect).toHaveBeenCalled();
+  });
+
+  it("switches mode with Ctrl+J", async () => {
+    render(<Page ready={true} />);
+    // Should start in document mode
+    expect(screen.getByTestId("mode-toggle").textContent).toContain("write");
+
+    await act(async () => {
+      fireEvent.keyDown(window, { key: "j", ctrlKey: true });
+    });
+    // Now in conversation mode
+    expect(screen.getByTestId("mode-toggle").textContent).toContain("chat");
+
+    await act(async () => {
+      fireEvent.keyDown(window, { key: "j", ctrlKey: true });
+    });
+    // Back to document mode
+    expect(screen.getByTestId("mode-toggle").textContent).toContain("write");
+  });
+
+  it("shows chat input in conversation mode", async () => {
+    mockConversation.sessionId = "test-session";
+    render(<Page ready={true} />);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("mode-toggle"));
+    });
+    expect(screen.getByTestId("chat-input")).toBeTruthy();
+  });
+
+  it("shows conversation messages when present", async () => {
+    mockConversation.sessionId = "test-session";
+    mockConversation.messages = [
+      { id: "m1", role: "user", content: "Hello there" },
+      { id: "m2", role: "assistant", content: "Hi! How can I help?" },
+    ];
+    render(<Page ready={true} />);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("mode-toggle"));
+    });
+    expect(screen.getByText("Hello there")).toBeTruthy();
+    expect(screen.getByText("Hi! How can I help?")).toBeTruthy();
+  });
+
+  it("shows status footer in conversation mode", async () => {
+    render(<Page ready={true} />);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("mode-toggle"));
+    });
+    expect(screen.getByText("No session")).toBeTruthy();
+  });
+
+  it("shows error in footer when conversation has error", async () => {
+    mockConversation.error = "Connection failed";
+    render(<Page ready={true} />);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("mode-toggle"));
+    });
+    expect(screen.getByText("Connection failed")).toBeTruthy();
+  });
+
   it("shows context tray indicator", () => {
     const { container } = render(<Page ready={true} />);
-    // Context count badge shows "0"
     const spans = container.querySelectorAll("span");
     const countSpan = Array.from(spans).find(
-      (s) => s.textContent?.trim() === "0" && s.className.includes("text-[10px]")
+      (s) =>
+        s.textContent?.trim() === "0" &&
+        s.className.includes("text-[10px]"),
     );
     expect(countSpan).toBeTruthy();
   });
