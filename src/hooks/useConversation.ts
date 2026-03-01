@@ -7,7 +7,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { Message } from "../components/Conversation";
-import type { PiEvent, CreateSessionRequest } from "../api/pi";
+import type { PiEvent, CreateSessionRequest, SessionMessage } from "../api/pi";
 
 // Import pi API — in tests, these are mocked via the Tauri IPC mock
 import { piApi } from "../api/pi";
@@ -151,6 +151,27 @@ export function useConversation(
     [nextMessageId],
   );
 
+  // Hydrate messages from pi session JSONL into React state
+  const hydrateMessages = useCallback(
+    async (sid: string) => {
+      try {
+        const sessionMessages: SessionMessage[] = await piApi.getMessages(sid);
+        if (sessionMessages.length > 0) {
+          const hydrated = sessionMessages.map((m) => ({
+            id: nextMessageId(),
+            role: m.role,
+            content: m.content,
+            model: m.model,
+          }));
+          setMessages(hydrated);
+        }
+      } catch {
+        // Hydration failure is non-fatal — session may be new/empty
+      }
+    },
+    [nextMessageId],
+  );
+
   // Connect to a session — stable
   const connect = useCallback(
     async (connectOptions?: CreateSessionRequest) => {
@@ -164,6 +185,9 @@ export function useConversation(
         const unlisten = await piApi.onSessionEvent(sid, handleEvent);
         unlistenRef.current = unlisten;
 
+        // Hydrate existing messages from pi session JSONL
+        await hydrateMessages(sid);
+
         return sid;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -171,7 +195,7 @@ export function useConversation(
         throw err;
       }
     },
-    [handleEvent],
+    [handleEvent, hydrateMessages],
   );
 
   // Send a message — uses ref for sessionId
@@ -287,6 +311,7 @@ export function useConversation(
         // Ignore cleanup errors
       }
       setSessionId(null);
+      setMessages([]);
     }
   }, []);
 

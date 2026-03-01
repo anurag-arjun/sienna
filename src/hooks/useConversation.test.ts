@@ -14,6 +14,7 @@ vi.mock("../api/pi", () => {
       steer: vi.fn().mockResolvedValue(undefined),
       abort: vi.fn().mockResolvedValue(undefined),
       destroySession: vi.fn().mockResolvedValue(undefined),
+      getMessages: vi.fn().mockResolvedValue([]),
       onSessionEvent: vi.fn().mockImplementation((_sid: string, cb: (event: unknown) => void) => {
         eventCallback = cb;
         return Promise.resolve(unlisten);
@@ -187,5 +188,82 @@ describe("useConversation", () => {
     });
 
     expect(result.current.error).toBe("No active session");
+  });
+
+  it("hydrates messages from pi session on connect", async () => {
+    const piApi = await getPiApi();
+    (piApi.getMessages as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { role: "user", content: "Hello" },
+      { role: "assistant", content: "Hi there!", model: "claude-sonnet-4-20250514" },
+      { role: "user", content: "How are you?" },
+      { role: "assistant", content: "I'm doing well!", model: "claude-sonnet-4-20250514" },
+    ]);
+
+    const { result } = renderHook(() => useConversation());
+
+    await act(async () => {
+      await result.current.connect();
+    });
+
+    expect(piApi.getMessages).toHaveBeenCalledWith("test-session-123");
+    expect(result.current.messages).toHaveLength(4);
+    expect(result.current.messages[0].role).toBe("user");
+    expect(result.current.messages[0].content).toBe("Hello");
+    expect(result.current.messages[1].role).toBe("assistant");
+    expect(result.current.messages[1].content).toBe("Hi there!");
+    expect(result.current.messages[1].model).toBe("claude-sonnet-4-20250514");
+    expect(result.current.messages[3].content).toBe("I'm doing well!");
+  });
+
+  it("hydrates empty session without error", async () => {
+    const piApi = await getPiApi();
+    (piApi.getMessages as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
+
+    const { result } = renderHook(() => useConversation());
+
+    await act(async () => {
+      await result.current.connect();
+    });
+
+    expect(result.current.messages).toHaveLength(0);
+    expect(result.current.error).toBeNull();
+  });
+
+  it("handles hydration failure gracefully", async () => {
+    const piApi = await getPiApi();
+    (piApi.getMessages as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error("JSONL parse error"),
+    );
+
+    const { result } = renderHook(() => useConversation());
+
+    await act(async () => {
+      await result.current.connect();
+    });
+
+    // Should still connect successfully despite hydration failure
+    expect(result.current.sessionId).toBe("test-session-123");
+    expect(result.current.messages).toHaveLength(0);
+    expect(result.current.error).toBeNull();
+  });
+
+  it("clears messages on disconnect", async () => {
+    const piApi = await getPiApi();
+    (piApi.getMessages as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { role: "user", content: "Hello" },
+      { role: "assistant", content: "Hi!", model: "claude-sonnet-4-20250514" },
+    ]);
+
+    const { result } = renderHook(() => useConversation());
+
+    await act(async () => {
+      await result.current.connect();
+    });
+    expect(result.current.messages).toHaveLength(2);
+
+    await act(async () => {
+      await result.current.disconnect();
+    });
+    expect(result.current.messages).toHaveLength(0);
   });
 });

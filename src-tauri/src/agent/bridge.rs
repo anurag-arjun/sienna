@@ -7,7 +7,7 @@
 //!
 //! Each active session gets its own entry in a shared session map.
 
-use crate::agent::types::{CreateSessionRequest, PiEvent, SessionState};
+use crate::agent::types::{CreateSessionRequest, PiEvent, SessionMessage, SessionState};
 use pi::sdk::{
     self, AgentEvent, AgentSessionHandle, SessionOptions,
 };
@@ -43,6 +43,10 @@ enum PiCommand {
     GetState {
         session_id: String,
         reply: oneshot::Sender<Result<SessionState, String>>,
+    },
+    GetMessages {
+        session_id: String,
+        reply: oneshot::Sender<Result<Vec<SessionMessage>, String>>,
     },
     SetModel {
         session_id: String,
@@ -188,6 +192,20 @@ impl PiBridge {
             .map_err(|_| "pi runtime dropped".to_string())?
     }
 
+    /// Get messages from a session (hydration from pi JSONL).
+    pub async fn get_messages(&self, session_id: String) -> Result<Vec<SessionMessage>, String> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.cmd_tx
+            .send(PiCommand::GetMessages {
+                session_id,
+                reply: reply_tx,
+            })
+            .map_err(|_| "pi runtime not running".to_string())?;
+        reply_rx
+            .await
+            .map_err(|_| "pi runtime dropped".to_string())?
+    }
+
     /// Destroy a session and free resources.
     pub async fn destroy_session(&self, session_id: String) -> Result<(), String> {
         let (reply_tx, reply_rx) = oneshot::channel();
@@ -288,6 +306,13 @@ async fn handle_command(
             reply,
         } => {
             let result = get_state_impl(&session_id, sessions).await;
+            let _ = reply.send(result);
+        }
+        PiCommand::GetMessages {
+            session_id,
+            reply,
+        } => {
+            let result = get_messages_impl(&session_id, sessions).await;
             let _ = reply.send(result);
         }
         PiCommand::SetModel {
@@ -467,6 +492,78 @@ async fn set_model_impl(
         .set_model(provider, model_id)
         .await
         .map_err(|e| e.to_string())
+}
+
+async fn get_messages_impl(
+    session_id: &str,
+    sessions: &Arc<Mutex<HashMap<String, SessionEntry>>>,
+) -> Result<Vec<SessionMessage>, String> {
+    let map = sessions.lock().unwrap();
+    let entry = map
+        .get(session_id)
+        .ok_or_else(|| format!("Session not found: {session_id}"))?;
+
+    let messages = entry
+        .handle
+        .messages()
+        .await
+        .map_err(|e| format!("Failed to get messages: {e}"))?;
+
+    Ok(messages
+        .iter()
+        .filter_map(|msg| {
+            use pi::model::Message as PiMessage;
+            match msg {
+                PiMessage::User(user_msg) => {
+                    let content = match &user_msg.content {
+                        pi::model::UserContent::Text(text) => text.clone(),
+                        pi::model::UserContent::Blocks(blocks) => {
+                            // Extract text from content blocks
+                            blocks
+                                .iter()
+                                .filter_map(|b| {
+                                    if let pi::model::ContentBlock::Text(t) = b {
+                                        Some(t.text.as_str())
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n")
+                        }
+                    };
+                    Some(SessionMessage {
+                        role: "user".to_string(),
+                        content,
+                        model: None,
+                    })
+                }
+                PiMessage::Assistant(assistant_msg) => {
+                    let content = assistant_msg
+                        .content
+                        .iter()
+                        .filter_map(|b| {
+                            if let pi::model::ContentBlock::Text(t) = b {
+                                Some(t.text.as_str())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    if content.is_empty() {
+                        return None;
+                    }
+                    Some(SessionMessage {
+                        role: "assistant".to_string(),
+                        content,
+                        model: Some(assistant_msg.model.clone()),
+                    })
+                }
+                _ => None, // Skip tool results, custom messages
+            }
+        })
+        .collect())
 }
 
 // ── Event Conversion ───────────────────────────────────────────────────

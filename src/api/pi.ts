@@ -34,6 +34,13 @@ export interface SessionState {
   message_count: number;
 }
 
+/** A simplified message hydrated from pi session JSONL. */
+export interface SessionMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  model?: string;
+}
+
 /** Discriminated union of events emitted by the pi backend. */
 export type PiEvent =
   | { type: 'agent_start'; session_id: string }
@@ -78,6 +85,11 @@ export async function setModel(sessionId: string, provider: string, modelId: str
   return invoke<void>('pi_set_model', { sessionId, provider, modelId });
 }
 
+/** Get messages from the session's JSONL history (hydration). */
+export async function getMessages(sessionId: string): Promise<SessionMessage[]> {
+  return invoke<SessionMessage[]>('pi_get_messages', { sessionId });
+}
+
 /** Destroy a session and free resources. */
 export async function destroySession(sessionId: string): Promise<void> {
   return invoke<void>('pi_destroy_session', { sessionId });
@@ -108,6 +120,7 @@ export const piApi = {
   steer,
   abort,
   getState,
+  getMessages,
   setModel,
   destroySession,
   onEvent,

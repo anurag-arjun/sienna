@@ -3,7 +3,7 @@ mod db;
 mod import;
 
 use agent::bridge::PiBridge;
-use agent::types::{CreateSessionRequest, SessionState};
+use agent::types::{CreateSessionRequest, SessionMessage, SessionState};
 use serde::{Deserialize, Serialize};
 use db::store::{self, AssembledContext, ContextSet, ContextSetItem, CreateContextSet, CreateContextSetItem, CreateNote, CreateNoteContext, Note, NoteContext, NoteFilter, NoteLink, Tag, UpdateContextSet, UpdateNote};
 use std::collections::HashMap;
@@ -308,6 +308,14 @@ async fn pi_get_state(
 }
 
 #[tauri::command]
+async fn pi_get_messages(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<Vec<SessionMessage>, String> {
+    state.pi.get_messages(session_id).await
+}
+
+#[tauri::command]
 async fn pi_set_model(
     state: State<'_, AppState>,
     session_id: String,
@@ -405,6 +413,7 @@ pub fn run() {
             pi_steer,
             pi_abort,
             pi_get_state,
+            pi_get_messages,
             pi_set_model,
             pi_destroy_session,
         ])

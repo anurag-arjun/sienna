@@ -113,6 +113,15 @@ pub struct SessionState {
     pub message_count: usize,
 }
 
+/// A simplified message for frontend hydration from pi session JSONL.
+#[derive(Debug, Clone, Serialize)]
+pub struct SessionMessage {
+    pub role: String,
+    pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+}
+
 /// Model info for the frontend.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Serialize)]
