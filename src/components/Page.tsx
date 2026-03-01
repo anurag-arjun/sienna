@@ -2,7 +2,9 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { Editor } from "../editor";
 import { Conversation } from "./Conversation";
 import { ChatInput } from "./ChatInput";
+import { LibraryPanel } from "./LibraryPanel";
 import { useConversation } from "../hooks/useConversation";
+import type { Note } from "../api/notes";
 
 export type PageMode = "document" | "conversation";
 
@@ -17,6 +19,8 @@ export type PageMode = "document" | "conversation";
 export function Page({ ready }: { ready: boolean }) {
   const [mode, setMode] = useState<PageMode>("document");
   const [wordCount, setWordCount] = useState(0);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [activeNoteId, setActiveNoteId] = useState<string | undefined>();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const conversation = useConversation({
@@ -47,7 +51,7 @@ export function Page({ ready }: { ready: boolean }) {
     }
   }, [conversation]);
 
-  // Cmd+J / Ctrl+J toggles mode
+  // Cmd+J toggles mode, Cmd+O toggles library
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "j" && (e.metaKey || e.ctrlKey)) {
@@ -58,10 +62,19 @@ export function Page({ ready }: { ready: boolean }) {
           setMode("document");
         }
       }
+      if (e.key === "o" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setLibraryOpen((prev) => !prev);
+      }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [mode, handleSwitchToConversation]);
+
+  const handleSelectNote = useCallback((note: Note) => {
+    setActiveNoteId(note.id);
+    setMode(note.type === "conversation" ? "conversation" : "document");
+  }, []);
 
   const readingTime = Math.max(1, Math.ceil(wordCount / 250));
 
@@ -133,6 +146,13 @@ export function Page({ ready }: { ready: boolean }) {
       {/* Mode indicator + Context tray */}
       <div className="h-6 flex items-center justify-center gap-3">
         <button
+          onClick={() => setLibraryOpen(true)}
+          className="text-text-tertiary text-[10px] opacity-40 hover:opacity-70 transition-opacity cursor-pointer select-none"
+          title="Library (Ctrl+O)"
+        >
+          ☰
+        </button>
+        <button
           onClick={() =>
             mode === "document"
               ? handleSwitchToConversation()
@@ -146,6 +166,14 @@ export function Page({ ready }: { ready: boolean }) {
         </button>
         <span className="text-text-tertiary text-[10px] opacity-40">0</span>
       </div>
+
+      {/* Library panel */}
+      <LibraryPanel
+        open={libraryOpen}
+        onClose={() => setLibraryOpen(false)}
+        onSelectNote={handleSelectNote}
+        activeNoteId={activeNoteId}
+      />
     </main>
   );
 }

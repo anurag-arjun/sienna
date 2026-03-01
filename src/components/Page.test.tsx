@@ -2,6 +2,13 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent, act } from "@testing-library/react";
 import { Page } from "./Page";
 
+// Mock notes API
+vi.mock("../api/notes", () => ({
+  notesApi: {
+    listNotes: vi.fn().mockResolvedValue([]),
+  },
+}));
+
 // Mock useConversation to avoid IPC calls
 const mockConversation = {
   messages: [],
@@ -125,6 +132,19 @@ describe("Page", () => {
       fireEvent.click(screen.getByTestId("mode-toggle"));
     });
     expect(screen.getByText("Connection failed")).toBeTruthy();
+  });
+
+  it("opens library panel with Ctrl+O", async () => {
+    render(<Page ready={true} />);
+    // Panel should start closed
+    const panel = screen.getByTestId("library-panel");
+    expect(panel.className).toContain("-translate-x-full");
+
+    await act(async () => {
+      fireEvent.keyDown(window, { key: "o", ctrlKey: true });
+    });
+    // Panel should now be visible
+    expect(panel.className).toContain("translate-x-0");
   });
 
   it("shows context tray indicator", () => {
