@@ -407,6 +407,104 @@ pub fn get_note_links(conn: &Connection, note_id: &str) -> Result<Vec<NoteLink>,
     Ok(links)
 }
 
+// ── Note Context Items ─────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NoteContext {
+    pub id: String,
+    pub note_id: String,
+    #[serde(rename = "type")]
+    pub ctx_type: String,
+    pub reference: String,
+    pub label: String,
+    pub content_cache: Option<String>,
+    pub sort_order: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateNoteContext {
+    pub note_id: String,
+    #[serde(rename = "type")]
+    pub ctx_type: String,
+    pub reference: String,
+    pub label: String,
+    pub content_cache: Option<String>,
+    pub sort_order: Option<i32>,
+}
+
+pub fn add_note_context(conn: &Connection, input: &CreateNoteContext) -> Result<NoteContext, String> {
+    let id = uuid::Uuid::new_v4().to_string();
+    let sort_order = input.sort_order.unwrap_or(0);
+
+    conn.execute(
+        "INSERT INTO note_context (id, note_id, type, reference, label, content_cache, sort_order)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![id, input.note_id, input.ctx_type, input.reference, input.label, input.content_cache, sort_order],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(NoteContext {
+        id,
+        note_id: input.note_id.clone(),
+        ctx_type: input.ctx_type.clone(),
+        reference: input.reference.clone(),
+        label: input.label.clone(),
+        content_cache: input.content_cache.clone(),
+        sort_order,
+    })
+}
+
+pub fn list_note_context(conn: &Connection, note_id: &str) -> Result<Vec<NoteContext>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, note_id, type, reference, label, content_cache, sort_order
+             FROM note_context WHERE note_id = ?1 ORDER BY sort_order ASC",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let items = stmt
+        .query_map(params![note_id], |row| {
+            Ok(NoteContext {
+                id: row.get(0)?,
+                note_id: row.get(1)?,
+                ctx_type: row.get(2)?,
+                reference: row.get(3)?,
+                label: row.get(4)?,
+                content_cache: row.get(5)?,
+                sort_order: row.get(6)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(items)
+}
+
+pub fn remove_note_context(conn: &Connection, id: &str) -> Result<(), String> {
+    conn.execute("DELETE FROM note_context WHERE id = ?1", params![id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn reorder_note_context(conn: &Connection, id: &str, sort_order: i32) -> Result<(), String> {
+    conn.execute(
+        "UPDATE note_context SET sort_order = ?1 WHERE id = ?2",
+        params![sort_order, id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn update_note_context_cache(conn: &Connection, id: &str, content_cache: &str) -> Result<(), String> {
+    conn.execute(
+        "UPDATE note_context SET content_cache = ?1 WHERE id = ?2",
+        params![content_cache, id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -653,6 +751,76 @@ mod tests {
         let links = get_note_links(&conn, &doc.id).unwrap();
         assert_eq!(links.len(), 1);
         assert_eq!(links[0].link_type, "distilled_from");
+    }
+
+    #[test]
+    fn test_note_context_crud() {
+        let conn = init_memory_db().unwrap();
+        let note = create_note(
+            &conn,
+            &CreateNote {
+                note_type: "document".to_string(),
+                title: "Test".to_string(),
+                content: None,
+                pi_session: None,
+                tags: None,
+            },
+        )
+        .unwrap();
+
+        // Add context items
+        let ctx1 = add_note_context(
+            &conn,
+            &CreateNoteContext {
+                note_id: note.id.clone(),
+                ctx_type: "local".to_string(),
+                reference: "/home/user/file.rs".to_string(),
+                label: "file.rs".to_string(),
+                content_cache: Some("fn main() {}".to_string()),
+                sort_order: Some(0),
+            },
+        )
+        .unwrap();
+
+        let ctx2 = add_note_context(
+            &conn,
+            &CreateNoteContext {
+                note_id: note.id.clone(),
+                ctx_type: "local".to_string(),
+                reference: "/home/user/lib.rs".to_string(),
+                label: "lib.rs".to_string(),
+                content_cache: Some("pub mod foo;".to_string()),
+                sort_order: Some(1),
+            },
+        )
+        .unwrap();
+
+        // List
+        let items = list_note_context(&conn, &note.id).unwrap();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].label, "file.rs");
+        assert_eq!(items[1].label, "lib.rs");
+
+        // Reorder
+        reorder_note_context(&conn, &ctx2.id, -1).unwrap();
+        let items = list_note_context(&conn, &note.id).unwrap();
+        assert_eq!(items[0].label, "lib.rs");
+        assert_eq!(items[1].label, "file.rs");
+
+        // Update cache
+        update_note_context_cache(&conn, &ctx1.id, "fn main() { println!(\"hi\"); }").unwrap();
+        let items = list_note_context(&conn, &note.id).unwrap();
+        let ctx1_updated = items.iter().find(|i| i.id == ctx1.id).unwrap();
+        assert_eq!(
+            ctx1_updated.content_cache.as_deref(),
+            Some("fn main() { println!(\"hi\"); }")
+        );
+
+        // Remove
+        remove_note_context(&conn, &ctx1.id).unwrap();
+        let items = list_note_context(&conn, &note.id).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].label, "lib.rs");
     }
 
     #[test]

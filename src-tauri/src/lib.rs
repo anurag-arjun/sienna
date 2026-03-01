@@ -3,7 +3,8 @@ mod db;
 
 use agent::bridge::PiBridge;
 use agent::types::{CreateSessionRequest, SessionState};
-use db::store::{self, CreateNote, Note, NoteFilter, NoteLink, Tag, UpdateNote};
+use serde::{Deserialize, Serialize};
+use db::store::{self, CreateNote, CreateNoteContext, Note, NoteContext, NoteFilter, NoteLink, Tag, UpdateNote};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use tauri::{Emitter, Manager, State};
@@ -73,6 +74,78 @@ fn add_note_link(state: State<'_, AppState>, link: NoteLink) -> Result<(), Strin
 fn get_note_links(state: State<'_, AppState>, note_id: String) -> Result<Vec<NoteLink>, String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
     store::get_note_links(&conn, &note_id)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct FileMeta {
+    name: String,
+    path: String,
+    size: u64,
+    is_dir: bool,
+}
+
+// ── Context Commands ───────────────────────────────────────────────────
+
+#[tauri::command]
+fn add_note_context(state: State<'_, AppState>, input: CreateNoteContext) -> Result<NoteContext, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    store::add_note_context(&conn, &input)
+}
+
+#[tauri::command]
+fn list_note_context(state: State<'_, AppState>, note_id: String) -> Result<Vec<NoteContext>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    store::list_note_context(&conn, &note_id)
+}
+
+#[tauri::command]
+fn remove_note_context(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    store::remove_note_context(&conn, &id)
+}
+
+#[tauri::command]
+fn reorder_note_context(state: State<'_, AppState>, id: String, sort_order: i32) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    store::reorder_note_context(&conn, &id, sort_order)
+}
+
+#[tauri::command]
+async fn read_file_content(path: String) -> Result<String, String> {
+    let metadata = tokio::fs::metadata(&path)
+        .await
+        .map_err(|e| format!("Cannot access {}: {}", path, e))?;
+
+    // Limit to 1MB for context items
+    if metadata.len() > 1_048_576 {
+        return Err(format!(
+            "File too large ({} bytes, max 1MB)",
+            metadata.len()
+        ));
+    }
+
+    tokio::fs::read_to_string(&path)
+        .await
+        .map_err(|e| format!("Cannot read {}: {}", path, e))
+}
+
+#[tauri::command]
+async fn get_file_meta(path: String) -> Result<FileMeta, String> {
+    let metadata = tokio::fs::metadata(&path)
+        .await
+        .map_err(|e| format!("Cannot access {}: {}", path, e))?;
+
+    let file_name = std::path::Path::new(&path)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    Ok(FileMeta {
+        name: file_name,
+        path: path.clone(),
+        size: metadata.len(),
+        is_dir: metadata.is_dir(),
+    })
 }
 
 // ── Pi Agent Commands ──────────────────────────────────────────────────
@@ -210,6 +283,7 @@ pub fn run() {
 
             Ok(())
         })
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             ping,
             create_note,
@@ -221,6 +295,12 @@ pub fn run() {
             set_note_tags,
             add_note_link,
             get_note_links,
+            add_note_context,
+            list_note_context,
+            remove_note_context,
+            reorder_note_context,
+            read_file_content,
+            get_file_meta,
             pi_create_session,
             pi_prompt,
             pi_steer,

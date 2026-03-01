@@ -9,6 +9,8 @@ import { resolveMode, type ModeConfig, type NoteTag } from "../lib/note-mode";
 import { buildDistillPrompt, suggestDistillTitle } from "../lib/distill";
 import { notesApi, type Note } from "../api/notes";
 import { ContextTray, ContextBadge } from "./ContextTray";
+import { ContextCard } from "./ContextCard";
+import { useContextItems } from "../hooks/useContextItems";
 
 export type PageMode = "document" | "conversation";
 
@@ -30,7 +32,6 @@ export function Page({ ready }: { ready: boolean }) {
   const [loadedContent, setLoadedContent] = useState("");
   const [editorKey, setEditorKey] = useState(0);
   const [trayOpen, setTrayOpen] = useState(false);
-  const [contextCount] = useState(0); // will be wired to actual items later
   const scrollRef = useRef<HTMLDivElement>(null);
   const editorContentRef = useRef<(() => string) | null>(null);
   const contentRef = useRef(""); // tracks current editor content for save
@@ -43,6 +44,9 @@ export function Page({ ready }: { ready: boolean }) {
   const conversation = useConversation({
     onError: onConversationError,
   });
+
+  // ── Context items ────────────────────────────────────────────────
+  const context = useContextItems(activeNoteId);
 
   // ── Note persistence ──────────────────────────────────────────────
   const activeNoteIdRef = useRef(activeNoteId);
@@ -354,7 +358,7 @@ export function Page({ ready }: { ready: boolean }) {
         >
           {noteMode.icon} {noteMode.label}
         </button>
-        <ContextBadge count={contextCount} onClick={() => setTrayOpen(true)} />
+        <ContextBadge count={context.count} onClick={() => setTrayOpen(true)} />
       </div>
 
       {/* Library panel */}
@@ -369,8 +373,20 @@ export function Page({ ready }: { ready: boolean }) {
       <ContextTray
         open={trayOpen}
         onClose={() => setTrayOpen(false)}
-        contextCount={contextCount}
-      />
+        contextCount={context.count}
+      >
+        {context.items.length > 0 && (() => {
+          const maxSize = Math.max(...context.items.map((i) => i.content_cache?.length ?? 0));
+          return context.items.map((item) => (
+            <ContextCard
+              key={item.id}
+              item={item}
+              maxSize={maxSize}
+              onRemove={context.remove}
+            />
+          ));
+        })()}
+      </ContextTray>
     </main>
   );
 }

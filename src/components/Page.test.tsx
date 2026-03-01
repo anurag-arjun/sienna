@@ -2,6 +2,18 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent, act } from "@testing-library/react";
 import { Page } from "./Page";
 
+// Mock context API
+vi.mock("../api/context", () => ({
+  contextApi: {
+    listNoteContext: vi.fn().mockResolvedValue([]),
+    addNoteContext: vi.fn().mockResolvedValue({ id: "ctx-1" }),
+    removeNoteContext: vi.fn().mockResolvedValue(undefined),
+    reorderNoteContext: vi.fn().mockResolvedValue(undefined),
+    readFileContent: vi.fn().mockResolvedValue("file content"),
+    getFileMeta: vi.fn().mockResolvedValue({ name: "test.txt", path: "/test.txt", size: 100, is_dir: false }),
+  },
+}));
+
 // Mock notes API
 vi.mock("../api/notes", () => ({
   notesApi: {
