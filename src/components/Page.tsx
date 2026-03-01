@@ -10,6 +10,7 @@ import { buildDistillPrompt, suggestDistillTitle } from "../lib/distill";
 import { notesApi, type Note } from "../api/notes";
 import { ContextTray, ContextBadge } from "./ContextTray";
 import { ContextCard } from "./ContextCard";
+import { ContextSearch } from "./ContextSearch";
 import { useContextItems } from "../hooks/useContextItems";
 
 export type PageMode = "document" | "conversation";
@@ -375,6 +376,13 @@ export function Page({ ready }: { ready: boolean }) {
         onClose={() => setTrayOpen(false)}
         contextCount={context.count}
       >
+        <ContextSearch
+          noteId={activeNoteId}
+          onAdd={async (path) => {
+            if (path) await context.addFile(path);
+            else await context.refresh();
+          }}
+        />
         {context.items.length > 0 && (() => {
           const maxSize = Math.max(...context.items.map((i) => i.content_cache?.length ?? 0));
           return context.items.map((item) => (
