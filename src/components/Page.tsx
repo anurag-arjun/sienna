@@ -392,11 +392,33 @@ export function Page({ ready }: { ready: boolean }) {
         const title = suggestDistillTitle(msgs, targetTag);
         const prompt = buildDistillPrompt(msgs, targetTag);
 
-        // Create the document note
+        // Create a temporary pi session to run the synthesis
+        const distillSid = await piApi.createSession({ no_session: true });
+
+        // Accumulate the AI's streamed response
+        let synthesized = "";
+        const unlisten = await piApi.onSessionEvent(distillSid, (event) => {
+          if (event.type === "text_delta") {
+            synthesized += event.delta;
+          }
+        });
+
+        try {
+          await piApi.prompt(distillSid, prompt);
+        } finally {
+          unlisten();
+          await piApi.destroySession(distillSid).catch(() => {});
+        }
+
+        if (!synthesized.trim()) {
+          throw new Error("AI returned empty response");
+        }
+
+        // Create the document note with AI-synthesized content
         const newNote = await notesApi.createNote({
           note_type: "document",
           title,
-          content: prompt,
+          content: synthesized,
           tags: [targetTag],
         });
 

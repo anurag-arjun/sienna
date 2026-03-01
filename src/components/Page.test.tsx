@@ -7,7 +7,12 @@ vi.mock("../api/pi", () => ({
   piApi: {
     createSession: vi.fn().mockResolvedValue("inline-session-1"),
     prompt: vi.fn().mockResolvedValue(undefined),
-    onSessionEvent: vi.fn().mockResolvedValue(vi.fn()),
+    getMessages: vi.fn().mockResolvedValue([]),
+    onSessionEvent: vi.fn().mockImplementation((_sid: string, cb: (event: unknown) => void) => {
+      // For distill tests: simulate AI response when prompt is called
+      // The callback is stored and triggered by prompt mock
+      return Promise.resolve(vi.fn());
+    }),
     destroySession: vi.fn().mockResolvedValue(undefined),
   },
 }));
@@ -197,6 +202,22 @@ describe("Page", () => {
   });
 
   it("triggers distill with Ctrl+D in conversation mode", async () => {
+    // Set up piApi mock to simulate AI response during distill
+    const { piApi: mockPi } = await import("../api/pi");
+    let capturedEventCb: ((event: unknown) => void) | null = null;
+    vi.mocked(mockPi.onSessionEvent).mockImplementation((_sid: string, cb: (event: unknown) => void) => {
+      capturedEventCb = cb;
+      return Promise.resolve(vi.fn());
+    });
+    vi.mocked(mockPi.createSession).mockResolvedValue("distill-session-1");
+    vi.mocked(mockPi.prompt).mockImplementation(async () => {
+      // Simulate AI streaming its response
+      if (capturedEventCb) {
+        capturedEventCb({ type: "text_delta", session_id: "distill-session-1", content_index: 0, delta: "# Synthesized Plan\n\nThis is the AI output." });
+        capturedEventCb({ type: "agent_end", session_id: "distill-session-1", error: null });
+      }
+    });
+
     mockConversation.sessionId = "test-session";
     mockConversation.messages = [
       { id: "m1", role: "user", content: "Hello there" },
@@ -214,14 +235,27 @@ describe("Page", () => {
       fireEvent.keyDown(window, { key: "d", ctrlKey: true });
     });
 
-    // Should have created a note
+    // Should have created a pi session for synthesis
+    expect(vi.mocked(mockPi.createSession)).toHaveBeenCalledWith({ no_session: true });
+
+    // Should have sent the distill prompt to the AI
+    expect(vi.mocked(mockPi.prompt)).toHaveBeenCalledWith(
+      "distill-session-1",
+      expect.stringContaining("Hello there"),
+    );
+
+    // Should have created a note with AI-synthesized content (not the raw prompt)
     const { notesApi: mockNotes } = await import("../api/notes");
     expect(vi.mocked(mockNotes.createNote)).toHaveBeenCalledWith(
       expect.objectContaining({
         note_type: "document",
+        content: "# Synthesized Plan\n\nThis is the AI output.",
         tags: ["plan"],
       }),
     );
+
+    // Should have cleaned up the distill session
+    expect(vi.mocked(mockPi.destroySession)).toHaveBeenCalledWith("distill-session-1");
   });
 
   it("does not distill in document mode", async () => {
