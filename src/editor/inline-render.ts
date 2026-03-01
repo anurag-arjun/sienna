@@ -37,18 +37,6 @@ const FORMATTING_NODES = new Set([
   // Image: contains LinkMark ! [ ] ( )
 ]);
 
-/** Block-level nodes where we style the whole line. */
-const BLOCK_NODES = new Set([
-  "ATXHeading1",
-  "ATXHeading2",
-  "ATXHeading3",
-  "ATXHeading4",
-  "ATXHeading5",
-  "ATXHeading6",
-  "Blockquote",
-  "FencedCode",
-]);
-
 /** Nodes where the cursor being inside means we show raw syntax. */
 const ACTIVATABLE_NODES = new Set([
   "ATXHeading1",
@@ -68,8 +56,10 @@ const ACTIVATABLE_NODES = new Set([
 // ── Placeholder widget for link text ───────────────────────────────────
 
 class LinkWidget extends WidgetType {
-  constructor(readonly url: string) {
+  url: string;
+  constructor(url: string) {
     super();
+    this.url = url;
   }
   toDOM() {
     const span = document.createElement("span");
