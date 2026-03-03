@@ -1,5 +1,5 @@
 [package]
-name = "mood-editor"
+name = "sienna"
 version = "0.1.0"
 description = "A single-surface desktop app for AI-assisted writing and conversation"
 authors = ["lighto"]

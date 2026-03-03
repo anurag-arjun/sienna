@@ -11,7 +11,7 @@ import { inlineGenerate } from "./inline-generate";
 import { inlineConversation, type InlineConversationOptions } from "./inline-conversation";
 
 /**
- * Base set of CodeMirror extensions for Mood Editor.
+ * Base set of CodeMirror extensions for Sienna.
  * Markdown mode with code block language support, history, search, and theme.
  */
 export function createBaseExtensions(options?: {

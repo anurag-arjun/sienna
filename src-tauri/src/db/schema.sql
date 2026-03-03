@@ -1,4 +1,4 @@
--- Mood Editor SQLite Schema
+-- Sienna SQLite Schema
 -- Notes, tags, context sets, FTS
 
 PRAGMA journal_mode = WAL;

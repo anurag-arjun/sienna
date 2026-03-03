@@ -46,7 +46,7 @@ describe("context-search", () => {
   describe("isGitHubRef", () => {
     it("detects owner/repo", () => {
       expect(isGitHubRef("facebook/react")).toBe(true);
-      expect(isGitHubRef("anurag-arjun/mood-editor")).toBe(true);
+      expect(isGitHubRef("anurag-arjun/sienna")).toBe(true);
     });
 
     it("detects owner/repo#number", () => {

@@ -1,7 +1,7 @@
 import { EditorView } from "@codemirror/view";
 
 /**
- * Warm dark CodeMirror theme matching the Mood Editor palette.
+ * Warm dark CodeMirror theme matching the Sienna palette.
  * Uses CSS custom properties defined in index.css.
  */
 export const moodTheme = EditorView.theme(

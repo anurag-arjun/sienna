@@ -1,4 +1,4 @@
-# Mood Editor
+# Sienna
 
 A desktop Markdown editor with built-in AI. Write documents, have conversations, or do both on the same page.
 
@@ -17,8 +17,8 @@ Context — files, notes, URLs — attaches via a slide-up tray and feeds into e
 **Prerequisites:** Rust (stable), Node.js 22+, pnpm, [Tauri v2 system deps](https://v2.tauri.app/start/prerequisites/)
 
 ```bash
-git clone https://github.com/anurag-arjun/mood-editor.git
-cd mood-editor
+git clone https://github.com/anurag-arjun/sienna.git
+cd sienna
 pnpm install
 pnpm tauri dev
 ```
@@ -67,7 +67,7 @@ On Linux with Wayland + WebKitGTK, the first launch may be slow or show a blank 
 
 ```bash
 export WEBKIT_DISABLE_DMABUF_RENDERER=1
-./mood-editor
+./sienna
 ```
 
 ## Status

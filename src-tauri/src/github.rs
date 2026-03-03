@@ -7,7 +7,7 @@ use reqwest::header::{ACCEPT, AUTHORIZATION, USER_AGENT};
 use serde::{Deserialize, Serialize};
 
 const GITHUB_API: &str = "https://api.github.com";
-const APP_USER_AGENT: &str = "mood-editor/0.1.0";
+const APP_USER_AGENT: &str = "sienna/0.1.0";
 
 // ── Types ──────────────────────────────────────────────────────────────
 

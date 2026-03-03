@@ -22,7 +22,7 @@ export interface ProviderGroup {
 
 /**
  * Built-in model registry.
- * Covers Anthropic, OpenAI, and Google — the cloud providers mood-editor supports.
+ * Covers Anthropic, OpenAI, and Google — the cloud providers Sienna supports.
  */
 export const MODEL_REGISTRY: ModelInfo[] = [
   // Anthropic

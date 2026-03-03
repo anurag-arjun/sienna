@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 const NOTION_API: &str = "https://api.notion.com/v1";
 const NOTION_VERSION: &str = "2022-06-28";
-const APP_USER_AGENT: &str = "mood-editor/0.1.0";
+const APP_USER_AGENT: &str = "sienna/0.1.0";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
