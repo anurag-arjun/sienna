@@ -25,6 +25,8 @@ interface EditorProps {
   onInlineConversationExpand?: (conversationId: string) => void;
   /** Reflex options (ambient AI annotations). Omit to disable. */
   reflex?: ReflexPluginOptions & { onClickRef?: (ref: string) => void };
+  /** Whether the theme is dark (default: true). Affects CM6 internal defaults. */
+  dark?: boolean;
 }
 
 /**
@@ -43,6 +45,7 @@ export function Editor({
   onInlineConversationCollapse,
   onInlineConversationExpand,
   reflex,
+  dark = true,
 }: EditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -92,6 +95,7 @@ export function Editor({
           onExpand: stableOnInlineConvExpand,
         },
         reflex,
+        dark,
       }),
     });
 

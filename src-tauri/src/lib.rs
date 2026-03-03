@@ -390,6 +390,20 @@ async fn notion_get_page(
     notion::get_page_content(&token, &page_id).await
 }
 
+// ── Settings Commands ──────────────────────────────────────────────────
+
+#[tauri::command]
+fn get_setting(state: State<'_, AppState>, key: String) -> Result<Option<String>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    store::get_setting(&conn, &key)
+}
+
+#[tauri::command]
+fn set_setting(state: State<'_, AppState>, key: String, value: String) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    store::set_setting(&conn, &key, &value)
+}
+
 // ── Reflex Commands ────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -662,6 +676,8 @@ pub fn run() {
             notion_clear_token,
             notion_search,
             notion_get_page,
+            get_setting,
+            set_setting,
             reflex_analyze_paragraph,
             reflex_toggle,
             reflex_is_enabled,

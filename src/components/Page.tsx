@@ -35,6 +35,7 @@ import { useContextSets } from "../hooks/useContextSets";
 import { ModelPicker } from "./ModelPicker";
 import { ShipSheet } from "./ShipSheet";
 import type { ModelInfo } from "../lib/models";
+import { useTheme } from "../hooks/useTheme";
 
 export type PageMode = "document" | "conversation";
 
@@ -58,6 +59,7 @@ export function Page({ ready }: { ready: boolean }) {
   const [trayOpen, setTrayOpen] = useState(false);
   const [shipOpen, setShipOpen] = useState(false);
   const [reflexEnabled, setReflexEnabled] = useState(true);
+  const { theme, toggle: toggleTheme } = useTheme();
   const scrollRef = useRef<HTMLDivElement>(null);
   const editorContentRef = useRef<(() => string) | null>(null);
   const editorViewRef = useRef<EditorView | null>(null);
@@ -471,6 +473,10 @@ export function Page({ ready }: { ready: boolean }) {
         e.preventDefault();
         setShipOpen((prev) => !prev);
       }
+      if (e.key === "T" && (e.metaKey || e.ctrlKey) && e.shiftKey) {
+        e.preventDefault();
+        toggleTheme();
+      }
       if (e.key === "/" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         setReflexEnabled((prev) => {
@@ -499,7 +505,7 @@ export function Page({ ready }: { ready: boolean }) {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [mode, handleSwitchToConversation, handleNewNote]);
+  }, [mode, handleSwitchToConversation, handleNewNote, toggleTheme]);
 
   const handleOpenLibrary = useCallback(() => setLibraryOpen(true), []);
   const handleCloseLibrary = useCallback(() => setLibraryOpen(false), []);
@@ -698,6 +704,7 @@ export function Page({ ready }: { ready: boolean }) {
               onInlineConversationSend={handleInlineConvSend}
               onInlineConversationCollapse={handleInlineConvCollapse}
               onInlineConversationExpand={handleInlineConvExpand}
+              dark={theme === "dark"}
               reflex={reflexEnabled && noteMode.tag !== "chat" ? {
                 onAnalyze: reflexApi.analyzeParagraph,
                 noteId: activeNoteId,
@@ -786,6 +793,14 @@ export function Page({ ready }: { ready: boolean }) {
           onSelect={handleModelSelect}
           disabled={conversation.streaming}
         />
+        <button
+          onClick={toggleTheme}
+          className="text-text-tertiary text-[10px] opacity-40 hover:opacity-70 transition-opacity cursor-pointer select-none"
+          title={`Theme: ${theme} (Ctrl+Shift+T)`}
+          data-testid="theme-toggle"
+        >
+          {theme === "dark" ? "◐" : "◑"}
+        </button>
         <button
           onClick={() => {
             setReflexEnabled((prev) => {

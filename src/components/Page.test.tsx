@@ -64,6 +64,12 @@ vi.mock("../api/notes", () => ({
   },
 }));
 
+// Mock settings API
+vi.mock("../api/settings", () => ({
+  getSetting: vi.fn().mockResolvedValue(null),
+  setSetting: vi.fn().mockResolvedValue(undefined),
+}));
+
 // Mock reflex API
 vi.mock("../api/reflex", () => ({
   analyzeParagraph: vi.fn().mockResolvedValue([]),
@@ -359,6 +365,46 @@ describe("Page", () => {
     // After toggle, should have tertiary style (disabled)
     const toggleAfter = screen.getByTestId("reflex-toggle");
     expect(toggleAfter.className).toContain("text-tertiary");
+  });
+
+  it("shows theme toggle button", () => {
+    render(<Page ready={true} />);
+    const toggle = screen.getByTestId("theme-toggle");
+    expect(toggle).toBeTruthy();
+    expect(toggle.textContent).toContain("◐"); // dark mode default
+  });
+
+  it("toggles theme with Ctrl+Shift+T", async () => {
+    render(<Page ready={true} />);
+
+    // Wait for useTheme to load
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(window, { key: "T", ctrlKey: true, shiftKey: true });
+    });
+
+    const toggle = screen.getByTestId("theme-toggle");
+    expect(toggle.textContent).toContain("◑"); // switched to light
+  });
+
+  it("toggles theme via button click", async () => {
+    render(<Page ready={true} />);
+
+    // Wait for useTheme to load
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+
+    const toggle = screen.getByTestId("theme-toggle");
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+
+    const toggleAfter = screen.getByTestId("theme-toggle");
+    expect(toggleAfter.textContent).toContain("◑");
   });
 
   it("toggles reflex via button click", async () => {
