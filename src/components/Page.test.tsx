@@ -64,6 +64,14 @@ vi.mock("../api/notes", () => ({
   },
 }));
 
+// Mock reflex API
+vi.mock("../api/reflex", () => ({
+  analyzeParagraph: vi.fn().mockResolvedValue([]),
+  toggleReflex: vi.fn().mockResolvedValue(true),
+  isReflexEnabled: vi.fn().mockResolvedValue(true),
+  invalidateReflexCache: vi.fn().mockResolvedValue(undefined),
+}));
+
 // Mock useConversation to avoid IPC calls
 const mockConversation = {
   messages: [] as Array<{ id: string; role: string; content: string; model?: string; entryId?: string }>,
@@ -328,5 +336,40 @@ describe("Page", () => {
     // Should reset to document mode with empty editor
     const { container } = render(<Page ready={true} />);
     expect(container.querySelector(".cm-editor")).toBeTruthy();
+  });
+
+  it("shows reflex toggle button", () => {
+    render(<Page ready={true} />);
+    const toggle = screen.getByTestId("reflex-toggle");
+    expect(toggle).toBeTruthy();
+    expect(toggle.textContent).toContain("◈");
+  });
+
+  it("toggles reflex with Ctrl+/", async () => {
+    render(<Page ready={true} />);
+    const toggle = screen.getByTestId("reflex-toggle");
+
+    // Initially has warm accent (enabled)
+    expect(toggle.className).toContain("accent-warm");
+
+    await act(async () => {
+      fireEvent.keyDown(window, { key: "/", ctrlKey: true });
+    });
+
+    // After toggle, should have tertiary style (disabled)
+    const toggleAfter = screen.getByTestId("reflex-toggle");
+    expect(toggleAfter.className).toContain("text-tertiary");
+  });
+
+  it("toggles reflex via button click", async () => {
+    render(<Page ready={true} />);
+    const toggle = screen.getByTestId("reflex-toggle");
+
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+
+    const toggleAfter = screen.getByTestId("reflex-toggle");
+    expect(toggleAfter.className).toContain("text-tertiary");
   });
 });
