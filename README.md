@@ -10,7 +10,7 @@ You get a single writing surface. Start typing and it's a Markdown editor with i
 
 The two modes blur together. You can ask the AI a question inside your document (Ctrl+Return), have a back-and-forth, then collapse it into a tiny dot in the margin. You can distill a conversation into a structured document (Ctrl+D). You can fork a conversation to explore a different direction (Ctrl+B).
 
-Context — files, notes, URLs — attaches via a slide-up tray and feeds into every AI interaction automatically. No copy-pasting.
+Context — files, notes, GitHub repos, Notion pages — attaches via a slide-up tray and feeds into every AI interaction automatically. No copy-pasting.
 
 ## Quick Start
 
@@ -25,6 +25,8 @@ pnpm tauri dev
 
 You'll need API keys for at least one provider (Anthropic, OpenAI, or Google) configured in your environment.
 
+**Linux note:** The dev build uses [mold](https://github.com/rui314/mold) for fast linking. Install with `sudo apt install mold clang`. On macOS/Windows the config is ignored automatically.
+
 ## Shortcuts
 
 | Key | What it does |
@@ -36,6 +38,7 @@ You'll need API keys for at least one provider (Anthropic, OpenAI, or Google) co
 | Ctrl+B | Fork a conversation |
 | Ctrl+O | Open your notes library |
 | Ctrl+N | New blank note |
+| Ctrl+E | Ship sheet — save to file, copy, or push to GitHub |
 | Esc | Close panels, dismiss AI output, collapse inline Q&A |
 
 ## How it works
@@ -46,7 +49,11 @@ You'll need API keys for at least one provider (Anthropic, OpenAI, or Google) co
 
 **Storage** — SQLite for notes, tags, and context. Pi JSONL for conversation history (tree-structured, forkable).
 
-**Context tray** — Slide up from the bottom. Search for files on disk, notes in your library, or paste URLs. Attached context is included in every AI message. Context sets let you auto-load specific files whenever a tag is used (e.g. `#blog` always loads your style guide).
+**Context tray** — Slide up from the bottom. Search for files on disk, notes in your library, GitHub repos/issues/PRs, or Notion pages. Attached context is included in every AI message. Context sets let you auto-load specific files whenever a tag is used (e.g. `#blog` always loads your style guide).
+
+**GitHub integration** — Add files, issues, and PRs from any repo as context. Push documents directly to GitHub from the ship sheet.
+
+**Notion integration** — Search your Notion workspace and pull in page content as context. Supports 18 block types with rich text formatting.
 
 **Tags as modes** — The first-line tag determines behavior. `#chat` makes Enter send messages. `#plan` loads a plan template. `#blog`, `#tweet`, `#scratch` each have their own defaults. No mode picker — just type.
 
@@ -57,8 +64,8 @@ Tauri v2 + React 19 + CodeMirror 6 + Tailwind CSS v4 + SQLite + pi_agent_rust. S
 ## Tests
 
 ```bash
-pnpm test              # 270 frontend tests (Vitest)
-cd src-tauri && cargo test --lib  # 26 backend tests
+pnpm test                         # 317 frontend tests (Vitest)
+cd src-tauri && cargo test --lib  # 61 backend tests
 ```
 
 ## Wayland
@@ -72,7 +79,7 @@ export WEBKIT_DISABLE_DMABUF_RENDERER=1
 
 ## Status
 
-Core surface is functional. Remaining work: GitHub/Notion context integrations, export/publish sheet, Wayland workaround, live AI testing.
+Core surface is functional — document editor, AI conversations, inline Q&A, context tray with file/GitHub/Notion integrations, ship sheet, model switching, conversation forking. In progress: ambient AI margin annotations (Reflex).
 
 ## License
 

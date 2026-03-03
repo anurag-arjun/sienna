@@ -591,7 +591,13 @@ pub fn run() {
             std::fs::create_dir_all(&app_dir)
                 .map_err(|e| e.to_string())?;
 
-            let db_path = app_dir.join("mood.db");
+            // Migrate from old name if needed
+            let old_db = app_dir.join("mood.db");
+            let db_path = app_dir.join("sienna.db");
+            if old_db.exists() && !db_path.exists() {
+                let _ = std::fs::rename(&old_db, &db_path);
+                log::info!("Migrated mood.db → sienna.db");
+            }
             log::info!("Database path: {}", db_path.display());
 
             let conn = db::init_db(&db_path)
