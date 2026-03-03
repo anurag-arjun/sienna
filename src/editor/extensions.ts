@@ -4,7 +4,7 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { searchKeymap } from "@codemirror/search";
 import { keymap, placeholder, drawSelection, EditorView } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
-import { moodTheme } from "./theme";
+import { createMoodTheme, moodTheme } from "./theme";
 import { inlineMarkdownRendering } from "./inline-render";
 import { inlineInvoke, type InlineInvokeOptions } from "./inline-invoke";
 import { inlineGenerate } from "./inline-generate";
@@ -21,6 +21,8 @@ export function createBaseExtensions(options?: {
   onInlineInvoke?: InlineInvokeOptions["onSubmit"];
   onInlineConversation?: InlineConversationOptions;
   reflex?: ReflexPluginOptions & { onClickRef?: (ref: string) => void };
+  /** Whether the theme is dark (default: true) */
+  dark?: boolean;
 }) {
   return [
     // Markdown language with nested code block highlighting
@@ -40,8 +42,8 @@ export function createBaseExtensions(options?: {
       ...searchKeymap,
     ]),
 
-    // Theme
-    moodTheme,
+    // Theme (dark flag controls CM6 internal defaults like selection fallback)
+    options?.dark === false ? createMoodTheme(false) : moodTheme,
 
     // Hybrid inline Markdown rendering (cursor-aware)
     inlineMarkdownRendering(),

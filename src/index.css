@@ -270,6 +270,43 @@ body {
   animation: reflex-fade-in 200ms ease forwards;
 }
 
+/* ── Light Theme ─────────────────────────────────────────────────────── */
+/* Warm paper-white palette. Applied via .theme-light class on <body>. */
+
+.theme-light {
+  /* Background layers — warm paper whites, not cold gray */
+  --color-surface-0: #f5f3ef;
+  --color-surface-1: #faf8f5;
+  --color-surface-2: #efede9;
+  --color-surface-3: #e5e3df;
+
+  /* Text hierarchy — rich darks, not pure black */
+  --color-text-primary: #2c2a26;
+  --color-text-secondary: #6b6860;
+  --color-text-tertiary: #a8a5a0;
+  --color-text-ai: #4a4840;
+
+  /* Functional accents — slightly deeper for contrast on light */
+  --color-accent-blue: #4a7ab5;
+  --color-accent-green: #4a9a75;
+  --color-accent-warm: #b8864a;
+  --color-accent-muted: #d0cdc8;
+
+  /* Status dots */
+  --color-status-active: #4a7ab5;
+  --color-status-completed: #4a9a75;
+  --color-status-dropped: #c0bdb8;
+}
+
+/* Light theme scrollbar adaptation */
+.theme-light ::-webkit-scrollbar-thumb {
+  background: #c0bdb8;
+}
+
+.theme-light ::-webkit-scrollbar-thumb:hover {
+  background: #a8a5a0;
+}
+
 /* Selection */
 ::selection {
   background-color: color-mix(in srgb, var(--color-accent-warm) 30%, transparent);
