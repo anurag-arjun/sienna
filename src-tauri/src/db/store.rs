@@ -764,6 +764,119 @@ pub struct AssembledContext {
     pub content: Option<String>,
 }
 
+// ── Reflex: Related Notes ──────────────────────────────────────────────
+
+/// A related note found via FTS for Reflex context.
+#[derive(Debug, Clone, Serialize)]
+pub struct RelatedNote {
+    pub id: String,
+    pub title: Option<String>,
+    pub excerpt: String,
+}
+
+/// Find notes related to a paragraph via FTS.
+/// Extracts key terms from the paragraph text and queries notes_fts.
+/// Returns up to `limit` results, excluding the current note.
+pub fn find_related_notes(
+    conn: &Connection,
+    paragraph: &str,
+    exclude_note_id: Option<&str>,
+    limit: usize,
+) -> Result<Vec<RelatedNote>, String> {
+    let terms = extract_search_terms(paragraph);
+    if terms.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Build an OR query from extracted terms for broader matching
+    let fts_query = terms.join(" OR ");
+
+    let exclude_id = exclude_note_id.unwrap_or("");
+    let lim = limit as i64;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT n.id, n.title, substr(n.content, 1, 200) as excerpt
+             FROM notes n
+             WHERE n.rowid IN (SELECT rowid FROM notes_fts WHERE notes_fts MATCH ?1)
+               AND n.id != ?2
+               AND n.status = 'active'
+             ORDER BY n.updated_at DESC
+             LIMIT ?3",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map(params![fts_query, exclude_id, lim], |row| {
+            Ok(RelatedNote {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                excerpt: row.get(2)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut results = Vec::new();
+    for row in rows {
+        if let Ok(note) = row {
+            results.push(note);
+        }
+    }
+    Ok(results)
+}
+
+/// Extract meaningful search terms from paragraph text.
+/// Removes common stop words and short words, keeps up to 8 terms.
+fn extract_search_terms(text: &str) -> Vec<String> {
+    const STOP_WORDS: &[&str] = &[
+        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+        "have", "has", "had", "do", "does", "did", "will", "would", "could",
+        "should", "may", "might", "shall", "can", "need", "dare", "ought",
+        "used", "to", "of", "in", "for", "on", "with", "at", "by", "from",
+        "as", "into", "through", "during", "before", "after", "above",
+        "below", "between", "out", "off", "over", "under", "again",
+        "further", "then", "once", "here", "there", "when", "where", "why",
+        "how", "all", "both", "each", "few", "more", "most", "other",
+        "some", "such", "no", "nor", "not", "only", "own", "same", "so",
+        "than", "too", "very", "just", "don", "now", "and", "but", "or",
+        "if", "this", "that", "these", "those", "it", "its", "i", "me",
+        "my", "we", "our", "you", "your", "he", "him", "his", "she", "her",
+        "they", "them", "their", "what", "which", "who", "whom",
+    ];
+
+    text.split(|c: char| !c.is_alphanumeric() && c != '-' && c != '_')
+        .map(|w| w.to_lowercase())
+        .filter(|w| w.len() >= 3 && !STOP_WORDS.contains(&w.as_str()))
+        .take(8)
+        .collect()
+}
+
+/// Assemble context string for Reflex analysis from note context items.
+/// Returns a formatted string of loaded context items for a note.
+pub fn assemble_reflex_context(
+    conn: &Connection,
+    note_id: &str,
+) -> Result<String, String> {
+    let items = list_note_context(conn, note_id)?;
+    if items.is_empty() {
+        return Ok(String::new());
+    }
+
+    let mut parts = Vec::new();
+    for item in &items {
+        if let Some(ref content) = item.content_cache {
+            // Truncate to first 500 chars to keep prompt reasonable
+            let truncated = if content.len() > 500 {
+                format!("{}…", &content[..500])
+            } else {
+                content.clone()
+            };
+            parts.push(format!("[{}: {}]\n{}", item.ctx_type, item.label, truncated));
+        }
+    }
+    Ok(parts.join("\n\n"))
+}
+
 // ── Settings ───────────────────────────────────────────────────────────
 
 pub fn get_setting(conn: &Connection, key: &str) -> Result<Option<String>, String> {
@@ -1332,5 +1445,110 @@ mod tests {
         )
         .unwrap();
         assert_eq!(listed[0].inline_conversations.as_deref(), Some(convs_json));
+    }
+
+    #[test]
+    fn test_extract_search_terms() {
+        let terms = extract_search_terms("The quick brown fox jumps over the lazy dog");
+        assert!(terms.contains(&"quick".to_string()));
+        assert!(terms.contains(&"brown".to_string()));
+        assert!(terms.contains(&"fox".to_string()));
+        assert!(terms.contains(&"jumps".to_string()));
+        assert!(terms.contains(&"lazy".to_string()));
+        assert!(terms.contains(&"dog".to_string()));
+        // "the" and "over" are stop words
+        assert!(!terms.contains(&"the".to_string()));
+        assert!(!terms.contains(&"over".to_string()));
+    }
+
+    #[test]
+    fn test_extract_search_terms_short_words() {
+        let terms = extract_search_terms("I am a go to it");
+        // All short or stop words
+        assert!(terms.is_empty());
+    }
+
+    #[test]
+    fn test_extract_search_terms_limit() {
+        let terms = extract_search_terms(
+            "architecture database migration caching validation serialization \
+             authentication authorization encryption monitoring"
+        );
+        assert!(terms.len() <= 8);
+    }
+
+    #[test]
+    fn test_find_related_notes() {
+        let conn = init_memory_db().unwrap();
+        let note1 = create_note(&conn, &CreateNote {
+            title: "Event Sourcing Draft".to_string(),
+            content: Some("Event sourcing is a pattern for storing state changes".to_string()),
+            note_type: "document".to_string(),
+            pi_session: None,
+            tags: None,
+        }).unwrap();
+
+        let _note2 = create_note(&conn, &CreateNote {
+            title: "CQRS Architecture".to_string(),
+            content: Some("CQRS separates command and query responsibilities".to_string()),
+            note_type: "document".to_string(),
+            pi_session: None,
+            tags: None,
+        }).unwrap();
+
+        // Search for content related to note1, excluding note1
+        let related = find_related_notes(&conn, "event sourcing pattern", Some(&note1.id), 5).unwrap();
+        assert!(related.iter().all(|r| r.id != note1.id));
+
+        // Search without excluding
+        let related_all = find_related_notes(&conn, "event sourcing pattern", None, 5).unwrap();
+        assert!(!related_all.is_empty());
+    }
+
+    #[test]
+    fn test_find_related_notes_no_results() {
+        let conn = init_memory_db().unwrap();
+        let related = find_related_notes(&conn, "xyzzy foobarbaz", None, 5).unwrap();
+        assert!(related.is_empty());
+    }
+
+    #[test]
+    fn test_assemble_reflex_context() {
+        let conn = init_memory_db().unwrap();
+        let note = create_note(&conn, &CreateNote {
+            title: "Test Note".to_string(),
+            content: Some("Some content".to_string()),
+            note_type: "document".to_string(),
+            pi_session: None,
+            tags: None,
+        }).unwrap();
+
+        add_note_context(&conn, &CreateNoteContext {
+            note_id: note.id.clone(),
+            ctx_type: "file".to_string(),
+            reference: "/path/to/file.rs".to_string(),
+            label: "file.rs".to_string(),
+            content_cache: Some("fn main() { println!(\"hello\"); }".to_string()),
+            sort_order: None,
+        }).unwrap();
+
+        let ctx = assemble_reflex_context(&conn, &note.id).unwrap();
+        assert!(ctx.contains("file.rs"));
+        assert!(ctx.contains("fn main()"));
+    }
+
+    #[test]
+    fn test_assemble_reflex_context_empty() {
+        let conn = init_memory_db().unwrap();
+        let note = create_note(&conn, &CreateNote {
+            title: "Empty Note".to_string(),
+            content: Some("No context".to_string()),
+            note_type: "document".to_string(),
+            pi_session: None,
+            tags: None,
+        }).unwrap();
+
+        let ctx = assemble_reflex_context(&conn, &note.id).unwrap();
+        assert!(ctx.is_empty());
     }
 }

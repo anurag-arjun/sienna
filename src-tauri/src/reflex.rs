@@ -5,6 +5,7 @@
 //! nudges. Results are cached by paragraph content hash with a 30-minute TTL.
 //! Rate-limited to max 1 analysis request per 2 seconds.
 
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -14,6 +15,7 @@ use tokio::sync::mpsc;
 
 use crate::agent::bridge::PiBridge;
 use crate::agent::types::CreateSessionRequest;
+use crate::db::store;
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -55,6 +57,9 @@ pub struct AnalyzeRequest {
     /// Additional context (loaded context items, related notes)
     #[serde(default)]
     pub context: Option<String>,
+    /// Note ID for cross-note and context-aware analysis
+    #[serde(default)]
+    pub note_id: Option<String>,
 }
 
 // ── Cache ──────────────────────────────────────────────────────────────
@@ -218,6 +223,7 @@ fn filter_annotations(annotations: Vec<Annotation>) -> Vec<Annotation> {
 /// The Reflex analysis engine. Manages cache, rate limiting, and model calls.
 pub struct ReflexEngine {
     pi: PiBridge,
+    db: Mutex<Option<std::sync::Arc<Mutex<Connection>>>>,
     cache: Mutex<HashMap<u64, CacheEntry>>,
     rate_limiter: Mutex<RateLimiter>,
     enabled: Mutex<bool>,
@@ -246,11 +252,17 @@ impl ReflexEngine {
 
         Self {
             pi,
+            db: Mutex::new(None),
             cache: Mutex::new(HashMap::new()),
             rate_limiter: Mutex::new(RateLimiter::new()),
             enabled: Mutex::new(true),
             queue_tx,
         }
+    }
+
+    /// Set the database connection for cross-note and context-aware analysis.
+    pub fn set_db(&self, db: std::sync::Arc<Mutex<Connection>>) {
+        *self.db.lock().unwrap() = Some(db);
     }
 
     /// Check if Reflex is enabled.
@@ -268,10 +280,69 @@ impl ReflexEngine {
         self.cache.lock().unwrap().clear();
     }
 
+    /// Enrich an AnalyzeRequest with related notes and context items from the DB.
+    fn enrich_context(&self, request: &mut AnalyzeRequest) {
+        let db_arc = {
+            let guard = self.db.lock().unwrap();
+            match guard.as_ref() {
+                Some(arc) => arc.clone(),
+                None => return,
+            }
+        };
+
+        let conn = match db_arc.lock() {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+
+        let mut context_parts: Vec<String> = Vec::new();
+
+        // Include existing context if provided
+        if let Some(ref existing) = request.context {
+            if !existing.is_empty() {
+                context_parts.push(existing.clone());
+            }
+        }
+
+        // Find related notes via FTS
+        let related = store::find_related_notes(
+            &conn,
+            &request.text,
+            request.note_id.as_deref(),
+            5,
+        )
+        .unwrap_or_default();
+
+        if !related.is_empty() {
+            let mut notes_section = String::from("Related notes from your corpus:");
+            for note in &related {
+                let title = note.title.as_deref().unwrap_or("Untitled");
+                notes_section.push_str(&format!(
+                    "\n- \"{title}\" (id: {}): {}",
+                    note.id, note.excerpt
+                ));
+            }
+            context_parts.push(notes_section);
+        }
+
+        // Assemble context items for the current note
+        if let Some(ref note_id) = request.note_id {
+            let ctx = store::assemble_reflex_context(&conn, note_id)
+                .unwrap_or_default();
+            if !ctx.is_empty() {
+                context_parts.push(format!("Loaded context items:\n{ctx}"));
+            }
+        }
+
+        if !context_parts.is_empty() {
+            request.context = Some(context_parts.join("\n\n"));
+        }
+    }
+
     /// Analyze a paragraph, returning cached results if available.
     pub async fn analyze_paragraph(
         &self,
-        request: AnalyzeRequest,
+        mut request: AnalyzeRequest,
     ) -> Vec<Annotation> {
         if !self.is_enabled() {
             return Vec::new();
@@ -293,6 +364,9 @@ impl ReflexEngine {
                 }
             }
         }
+
+        // Enrich with cross-note and context data
+        self.enrich_context(&mut request);
 
         // Rate limit check
         let should_queue = {
@@ -469,6 +543,7 @@ mod tests {
     #[test]
     fn build_prompt_includes_text() {
         let req = AnalyzeRequest {
+            note_id: None,
             text: "Test paragraph".to_string(),
             before: None,
             after: None,
@@ -483,6 +558,7 @@ mod tests {
     #[test]
     fn build_prompt_includes_mode() {
         let req = AnalyzeRequest {
+            note_id: None,
             text: "Test".to_string(),
             before: None,
             after: None,
@@ -497,6 +573,7 @@ mod tests {
     #[test]
     fn build_prompt_includes_surrounding() {
         let req = AnalyzeRequest {
+            note_id: None,
             text: "Main paragraph".to_string(),
             before: Some("Before text".to_string()),
             after: Some("After text".to_string()),
@@ -543,6 +620,7 @@ mod tests {
     fn empty_text_returns_no_annotations() {
         // This tests the logic, not the async path
         let req = AnalyzeRequest {
+            note_id: None,
             text: "   ".to_string(),
             before: None,
             after: None,

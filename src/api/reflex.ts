@@ -22,6 +22,7 @@ export interface AnalyzeRequest {
   after?: string;
   mode?: string;
   context?: string;
+  note_id?: string;
 }
 
 export async function analyzeParagraph(

@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager, State};
 struct AppState {
-    db: Mutex<rusqlite::Connection>,
+    db: Arc<Mutex<rusqlite::Connection>>,
     pi: PiBridge,
     reflex: Arc<ReflexEngine>,
     /// Active event forwarders (session_id → abort sender to stop forwarding)
@@ -606,8 +606,11 @@ pub fn run() {
             let pi_bridge = PiBridge::new();
             let reflex_engine = Arc::new(ReflexEngine::new(pi_bridge.clone()));
 
+            let db_arc = Arc::new(Mutex::new(conn));
+            reflex_engine.set_db(db_arc.clone());
+
             handle.manage(AppState {
-                db: Mutex::new(conn),
+                db: db_arc,
                 pi: pi_bridge,
                 reflex: reflex_engine,
                 event_forwarders: Mutex::new(HashMap::new()),
