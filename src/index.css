@@ -30,6 +30,8 @@
   /* Typography — one family, one set of proportions */
   --font-sans: "Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", ui-monospace, monospace;
+  /* Editor content font — overridden by font picker, defaults to sans */
+  --font-editor: var(--font-sans);
 
   /* Spacing scale */
   --spacing-page-x: 4rem;

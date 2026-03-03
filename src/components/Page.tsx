@@ -36,6 +36,8 @@ import { ModelPicker } from "./ModelPicker";
 import { ShipSheet } from "./ShipSheet";
 import type { ModelInfo } from "../lib/models";
 import { useTheme } from "../hooks/useTheme";
+import { useEditorFont } from "../hooks/useEditorFont";
+import { FontPicker } from "./FontPicker";
 
 export type PageMode = "document" | "conversation";
 
@@ -60,6 +62,7 @@ export function Page({ ready }: { ready: boolean }) {
   const [shipOpen, setShipOpen] = useState(false);
   const [reflexEnabled, setReflexEnabled] = useState(true);
   const { theme, toggle: toggleTheme } = useTheme();
+  const editorFont = useEditorFont();
   const scrollRef = useRef<HTMLDivElement>(null);
   const editorContentRef = useRef<(() => string) | null>(null);
   const editorViewRef = useRef<EditorView | null>(null);
@@ -823,6 +826,10 @@ export function Page({ ready }: { ready: boolean }) {
         >
           ◈
         </button>
+        <FontPicker
+          currentFontId={editorFont.font.id}
+          onSelect={editorFont.setFont}
+        />
         <ContextBadge count={context.count} onClick={() => setTrayOpen(true)} />
       </div>
 

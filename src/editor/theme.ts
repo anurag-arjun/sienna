@@ -19,7 +19,7 @@ const themeSpec = {
   ".cm-content": {
     caretColor: "var(--color-accent-warm)",
     padding: "0",
-    fontFamily: "var(--font-sans)",
+    fontFamily: "var(--font-editor)",
   },
   ".cm-cursor, .cm-dropCursor": {
     borderLeftColor: "var(--color-accent-warm)",
