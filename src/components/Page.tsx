@@ -13,6 +13,7 @@ import {
   restoreConversations,
   serializeConversations,
   deserializeConversations,
+  toggleReflex,
 } from "../editor";
 import type { SerializedConversation } from "../editor";
 import type { EditorView } from "@codemirror/view";
@@ -25,6 +26,7 @@ import { resolveMode, type ModeConfig, type NoteTag } from "../lib/note-mode";
 import { buildDistillPrompt, suggestDistillTitle } from "../lib/distill";
 import { notesApi, type Note } from "../api/notes";
 import { piApi, type PiEvent } from "../api/pi";
+import * as reflexApi from "../api/reflex";
 import { ContextTray, ContextBadge } from "./ContextTray";
 import { ContextCard } from "./ContextCard";
 import { ContextSearch } from "./ContextSearch";
@@ -55,6 +57,7 @@ export function Page({ ready }: { ready: boolean }) {
   const [editorKey, setEditorKey] = useState(0);
   const [trayOpen, setTrayOpen] = useState(false);
   const [shipOpen, setShipOpen] = useState(false);
+  const [reflexEnabled, setReflexEnabled] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const editorContentRef = useRef<(() => string) | null>(null);
   const editorViewRef = useRef<EditorView | null>(null);
@@ -381,6 +384,14 @@ export function Page({ ready }: { ready: boolean }) {
         setMode("document");
       }
 
+      // Auto-disable Reflex in #chat mode
+      if (detected.tag === "chat") {
+        const view = editorViewRef.current;
+        if (view) {
+          view.dispatch({ effects: toggleReflex.of(false) });
+        }
+      }
+
       return detected;
     });
 
@@ -459,6 +470,20 @@ export function Page({ ready }: { ready: boolean }) {
       if (e.key === "e" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         setShipOpen((prev) => !prev);
+      }
+      if (e.key === "/" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setReflexEnabled((prev) => {
+          const next = !prev;
+          // Toggle in CM6 state
+          const view = editorViewRef.current;
+          if (view) {
+            view.dispatch({ effects: toggleReflex.of(next) });
+          }
+          // Toggle in backend
+          reflexApi.toggleReflex(next).catch(() => {});
+          return next;
+        });
       }
       if (e.key === "b" && (e.metaKey || e.ctrlKey) && mode === "conversation") {
         e.preventDefault();
@@ -643,6 +668,15 @@ export function Page({ ready }: { ready: boolean }) {
     [flushSave],
   );
 
+  // Invalidate reflex cache when context items change
+  const prevContextCountRef = useRef(context.count);
+  useEffect(() => {
+    if (context.count !== prevContextCountRef.current) {
+      prevContextCountRef.current = context.count;
+      reflexApi.invalidateReflexCache().catch(() => {});
+    }
+  }, [context.count]);
+
   const readingTime = Math.max(1, Math.ceil(wordCount / 250));
 
   return (
@@ -664,6 +698,11 @@ export function Page({ ready }: { ready: boolean }) {
               onInlineConversationSend={handleInlineConvSend}
               onInlineConversationCollapse={handleInlineConvCollapse}
               onInlineConversationExpand={handleInlineConvExpand}
+              reflex={reflexEnabled && noteMode.tag !== "chat" ? {
+                onAnalyze: reflexApi.analyzeParagraph,
+                noteId: activeNoteId,
+                mode: noteMode.tag,
+              } : undefined}
               autoFocus
             />
           </div>
@@ -747,6 +786,28 @@ export function Page({ ready }: { ready: boolean }) {
           onSelect={handleModelSelect}
           disabled={conversation.streaming}
         />
+        <button
+          onClick={() => {
+            setReflexEnabled((prev) => {
+              const next = !prev;
+              const view = editorViewRef.current;
+              if (view) {
+                view.dispatch({ effects: toggleReflex.of(next) });
+              }
+              reflexApi.toggleReflex(next).catch(() => {});
+              return next;
+            });
+          }}
+          className={`text-[10px] transition-opacity cursor-pointer select-none ${
+            reflexEnabled && noteMode.tag !== "chat"
+              ? "text-accent-warm opacity-50 hover:opacity-80"
+              : "text-text-tertiary opacity-30 hover:opacity-50"
+          }`}
+          title={`Reflex ${reflexEnabled ? "on" : "off"} (Ctrl+/)`}
+          data-testid="reflex-toggle"
+        >
+          ◈
+        </button>
         <ContextBadge count={context.count} onClick={() => setTrayOpen(true)} />
       </div>
 

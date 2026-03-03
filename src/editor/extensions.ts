@@ -9,6 +9,7 @@ import { inlineMarkdownRendering } from "./inline-render";
 import { inlineInvoke, type InlineInvokeOptions } from "./inline-invoke";
 import { inlineGenerate } from "./inline-generate";
 import { inlineConversation, type InlineConversationOptions } from "./inline-conversation";
+import { inlineReflex, type ReflexPluginOptions } from "./inline-reflex";
 
 /**
  * Base set of CodeMirror extensions for Sienna.
@@ -19,6 +20,7 @@ export function createBaseExtensions(options?: {
   onChange?: (content: string) => void;
   onInlineInvoke?: InlineInvokeOptions["onSubmit"];
   onInlineConversation?: InlineConversationOptions;
+  reflex?: ReflexPluginOptions & { onClickRef?: (ref: string) => void };
 }) {
   return [
     // Markdown language with nested code block highlighting
@@ -69,6 +71,9 @@ export function createBaseExtensions(options?: {
 
     // Inline conversation (Ctrl+Return in document)
     inlineConversation(options?.onInlineConversation),
+
+    // Reflex — ambient AI margin annotations
+    ...(options?.reflex ? [inlineReflex(options.reflex)] : []),
 
     // Tab size for indentation
     EditorState.tabSize.of(2),

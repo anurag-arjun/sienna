@@ -36,3 +36,9 @@ export type {
   InlineConversationOptions,
   SerializedConversation,
 } from "./inline-conversation";
+export {
+  reflexField,
+  toggleReflex,
+  clearAnnotations,
+} from "./inline-reflex";
+export type { ReflexState, ReflexPluginOptions } from "./inline-reflex";

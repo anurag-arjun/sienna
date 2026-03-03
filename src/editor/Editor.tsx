@@ -2,6 +2,7 @@ import { useRef, useEffect, useCallback } from "react";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { createBaseExtensions } from "./extensions";
+import type { ReflexPluginOptions } from "./inline-reflex";
 
 interface EditorProps {
   /** Initial document content */
@@ -22,6 +23,8 @@ interface EditorProps {
   onInlineConversationSend?: (conversationId: string, text: string) => void;
   onInlineConversationCollapse?: (conversationId: string) => void;
   onInlineConversationExpand?: (conversationId: string) => void;
+  /** Reflex options (ambient AI annotations). Omit to disable. */
+  reflex?: ReflexPluginOptions & { onClickRef?: (ref: string) => void };
 }
 
 /**
@@ -39,6 +42,7 @@ export function Editor({
   onInlineConversationSend,
   onInlineConversationCollapse,
   onInlineConversationExpand,
+  reflex,
 }: EditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -87,6 +91,7 @@ export function Editor({
           onCollapse: stableOnInlineConvCollapse,
           onExpand: stableOnInlineConvExpand,
         },
+        reflex,
       }),
     });
 

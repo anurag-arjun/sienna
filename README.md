@@ -39,6 +39,7 @@ You'll need API keys for at least one provider (Anthropic, OpenAI, or Google) co
 | Ctrl+O | Open your notes library |
 | Ctrl+N | New blank note |
 | Ctrl+E | Ship sheet — save to file, copy, or push to GitHub |
+| Ctrl+/ | Toggle Reflex (ambient AI margin annotations) |
 | Esc | Close panels, dismiss AI output, collapse inline Q&A |
 
 ## How it works
