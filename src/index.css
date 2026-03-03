@@ -205,6 +205,71 @@ body {
   opacity: 0.8;
 }
 
+/* Reflex — margin annotations */
+.reflex-gutter {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-left: 2rem;
+  padding-left: 0.75rem;
+  border-left: 1px solid color-mix(in srgb, var(--color-accent-muted) 40%, transparent);
+  max-width: 220px;
+  vertical-align: top;
+}
+
+.reflex-annotation {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  color: var(--color-text-tertiary);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+  transition: opacity var(--transition-normal);
+}
+
+.reflex-annotation:hover {
+  color: var(--color-text-secondary);
+}
+
+.reflex-icon {
+  flex-shrink: 0;
+  width: 1em;
+  text-align: center;
+}
+
+.reflex-message {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reflex-type-consistency .reflex-icon { color: var(--color-accent-green); }
+.reflex-type-connection .reflex-icon { color: var(--color-accent-blue); }
+.reflex-type-continuity .reflex-icon { color: var(--color-accent-warm); }
+.reflex-type-structure .reflex-icon { color: var(--color-text-tertiary); }
+.reflex-type-question .reflex-icon { color: var(--color-accent-warm); }
+
+.reflex-clickable {
+  cursor: pointer;
+}
+
+.reflex-clickable:hover {
+  color: var(--color-accent-blue);
+}
+
+/* Reflex fade transitions */
+@keyframes reflex-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.reflex-fade-in {
+  animation: reflex-fade-in 200ms ease forwards;
+}
+
 /* Selection */
 ::selection {
   background-color: color-mix(in srgb, var(--color-accent-warm) 30%, transparent);

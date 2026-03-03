@@ -6,6 +6,7 @@ import {
   setAnnotations,
   clearAnnotations,
   toggleReflex,
+  ReflexAnnotationWidget,
 } from "./inline-reflex";
 import type { Annotation } from "../api/reflex";
 
@@ -152,5 +153,97 @@ describe("reflexField", () => {
     state = state.update({ effects: toggleReflex.of(true) }).state;
     const reflex = state.field(reflexField);
     expect(reflex.enabled).toBe(true);
+  });
+});
+
+// ── Widget Rendering ───────────────────────────────────────────────────
+
+describe("ReflexAnnotationWidget", () => {
+  it("renders correct icon for each type", () => {
+    const types: Array<{ type: Annotation["type"]; icon: string }> = [
+      { type: "consistency", icon: "✓" },
+      { type: "connection", icon: "↗" },
+      { type: "continuity", icon: "…" },
+      { type: "structure", icon: "≈" },
+      { type: "question", icon: "?" },
+    ];
+
+    for (const { type, icon } of types) {
+      const widget = new ReflexAnnotationWidget([
+        { type, message: "Test", confidence: 0.9 },
+      ]);
+      const dom = widget.toDOM();
+      const iconEl = dom.querySelector(".reflex-icon");
+      expect(iconEl?.textContent).toBe(icon);
+    }
+  });
+
+  it("renders multiple annotations", () => {
+    const widget = new ReflexAnnotationWidget([
+      { type: "consistency", message: "Verified", confidence: 0.9 },
+      { type: "connection", message: "Related", confidence: 0.8 },
+    ]);
+    const dom = widget.toDOM();
+    const rows = dom.querySelectorAll(".reflex-annotation");
+    expect(rows.length).toBe(2);
+  });
+
+  it("sets title attribute for hover tooltip", () => {
+    const widget = new ReflexAnnotationWidget([
+      { type: "structure", message: "42 words in this sentence", confidence: 0.7 },
+    ]);
+    const dom = widget.toDOM();
+    const row = dom.querySelector(".reflex-annotation");
+    expect(row?.getAttribute("title")).toBe("42 words in this sentence");
+  });
+
+  it("applies type-specific class", () => {
+    const widget = new ReflexAnnotationWidget([
+      { type: "question", message: "Unattributed", confidence: 0.9 },
+    ]);
+    const dom = widget.toDOM();
+    const row = dom.querySelector(".reflex-annotation");
+    expect(row?.classList.contains("reflex-type-question")).toBe(true);
+  });
+
+  it("makes connection annotations clickable", () => {
+    const onClick = vi.fn();
+    const widget = new ReflexAnnotationWidget(
+      [{ type: "connection", message: "See draft", confidence: 0.8, ref: "note-123" }],
+      onClick,
+    );
+    const dom = widget.toDOM();
+    const row = dom.querySelector(".reflex-clickable");
+    expect(row).toBeTruthy();
+    (row as HTMLElement).click();
+    expect(onClick).toHaveBeenCalledWith("note-123");
+  });
+
+  it("eq returns true for identical annotations", () => {
+    const a = new ReflexAnnotationWidget([
+      { type: "consistency", message: "OK", confidence: 0.9 },
+    ]);
+    const b = new ReflexAnnotationWidget([
+      { type: "consistency", message: "OK", confidence: 0.9 },
+    ]);
+    expect(a.eq(b)).toBe(true);
+  });
+
+  it("eq returns false for different annotations", () => {
+    const a = new ReflexAnnotationWidget([
+      { type: "consistency", message: "OK", confidence: 0.9 },
+    ]);
+    const b = new ReflexAnnotationWidget([
+      { type: "question", message: "Why?", confidence: 0.9 },
+    ]);
+    expect(a.eq(b)).toBe(false);
+  });
+
+  it("has fade-in class on container", () => {
+    const widget = new ReflexAnnotationWidget([
+      { type: "structure", message: "Short", confidence: 0.7 },
+    ]);
+    const dom = widget.toDOM();
+    expect(dom.classList.contains("reflex-fade-in")).toBe(true);
   });
 });

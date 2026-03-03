@@ -11,9 +11,17 @@ import {
   StateEffect,
   type Extension,
   type EditorState,
+  RangeSetBuilder,
 } from "@codemirror/state";
-import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
-import type { Annotation, AnalyzeRequest } from "../api/reflex";
+import {
+  EditorView,
+  ViewPlugin,
+  Decoration,
+  type DecorationSet,
+  WidgetType,
+  type ViewUpdate,
+} from "@codemirror/view";
+import type { Annotation, AnnotationType, AnalyzeRequest } from "../api/reflex";
 
 // ── State Effects ──────────────────────────────────────────────────────
 
@@ -301,11 +309,159 @@ export function createReflexPlugin(options: ReflexPluginOptions) {
   );
 }
 
+// ── Annotation Type Icons ──────────────────────────────────────────────
+
+const ANNOTATION_ICONS: Record<AnnotationType, string> = {
+  consistency: "✓",
+  connection: "↗",
+  continuity: "…",
+  structure: "≈",
+  question: "?",
+};
+
+// ── Margin Widget ──────────────────────────────────────────────────────
+
+export class ReflexAnnotationWidget extends WidgetType {
+  constructor(
+    readonly annotations: Annotation[],
+    readonly onClickRef?: (ref: string) => void,
+  ) {
+    super();
+  }
+
+  eq(other: ReflexAnnotationWidget): boolean {
+    if (this.annotations.length !== other.annotations.length) return false;
+    return this.annotations.every(
+      (a, i) =>
+        a.type === other.annotations[i].type &&
+        a.message === other.annotations[i].message,
+    );
+  }
+
+  toDOM(): HTMLElement {
+    const container = document.createElement("div");
+    container.className = "reflex-gutter reflex-fade-in";
+
+    for (const annotation of this.annotations) {
+      const row = document.createElement("div");
+      row.className = `reflex-annotation reflex-type-${annotation.type}`;
+      row.title = annotation.message; // Full text on hover
+
+      const icon = document.createElement("span");
+      icon.className = "reflex-icon";
+      icon.textContent = ANNOTATION_ICONS[annotation.type] || "•";
+      row.appendChild(icon);
+
+      const msg = document.createElement("span");
+      msg.className = "reflex-message";
+      msg.textContent = annotation.message;
+      row.appendChild(msg);
+
+      // Clickable connection annotations
+      if (annotation.type === "connection" && annotation.ref && this.onClickRef) {
+        row.classList.add("reflex-clickable");
+        const ref = annotation.ref;
+        const handler = this.onClickRef;
+        row.addEventListener("click", () => handler(ref));
+      }
+
+      container.appendChild(row);
+    }
+
+    return container;
+  }
+
+  ignoreEvent(): boolean {
+    return false; // Allow click events
+  }
+}
+
+// ── Margin Decoration Plugin ───────────────────────────────────────────
+
+/**
+ * ViewPlugin that reads from reflexField and creates line decorations
+ * showing annotations in the right margin.
+ */
+export function createReflexMarginPlugin(onClickRef?: (ref: string) => void) {
+  return ViewPlugin.fromClass(
+    class {
+      decorations: DecorationSet;
+
+      constructor(view: EditorView) {
+        this.decorations = this.buildDecorations(view);
+      }
+
+      update(update: ViewUpdate) {
+        // Rebuild when annotations change or doc changes
+        const oldState = update.startState.field(reflexField);
+        const newState = update.state.field(reflexField);
+        if (
+          oldState !== newState ||
+          update.docChanged
+        ) {
+          this.decorations = this.buildDecorations(update.view);
+        }
+      }
+
+      buildDecorations(view: EditorView): DecorationSet {
+        const state = view.state.field(reflexField);
+        if (!state.enabled || state.annotations.size === 0) {
+          return Decoration.none;
+        }
+
+        const doc = view.state.doc.toString();
+        const paragraphs = detectParagraphs(doc);
+        const builder = new RangeSetBuilder<Decoration>();
+
+        // Collect decorations sorted by position
+        const widgets: { pos: number; annotations: Annotation[] }[] = [];
+
+        for (const para of paragraphs) {
+          const annotations = state.annotations.get(para.index);
+          if (annotations && annotations.length > 0) {
+            // Place widget at the end of the paragraph's first line
+            const firstLineEnd = Math.min(
+              para.from + (para.text.indexOf("\n") >= 0 ? para.text.indexOf("\n") : para.text.length),
+              view.state.doc.length,
+            );
+            widgets.push({ pos: firstLineEnd, annotations });
+          }
+        }
+
+        // Sort by position (required for RangeSetBuilder)
+        widgets.sort((a, b) => a.pos - b.pos);
+
+        for (const { pos, annotations } of widgets) {
+          builder.add(
+            pos,
+            pos,
+            Decoration.widget({
+              widget: new ReflexAnnotationWidget(annotations, onClickRef),
+              side: 1, // After the text
+            }),
+          );
+        }
+
+        return builder.finish();
+      }
+    },
+    {
+      decorations: (v) => v.decorations,
+    },
+  );
+}
+
 // ── Extension Factory ──────────────────────────────────────────────────
 
 /**
- * Create the full Reflex extension (state field + analysis plugin).
+ * Create the full Reflex extension (state field + analysis plugin + margin rendering).
  */
-export function inlineReflex(options: ReflexPluginOptions): Extension {
-  return [reflexField, createReflexPlugin(options)];
+export function inlineReflex(
+  options: ReflexPluginOptions & { onClickRef?: (ref: string) => void },
+): Extension {
+  return [
+    reflexField,
+    createReflexPlugin(options),
+    createReflexMarginPlugin(options.onClickRef),
+  ];
 }
