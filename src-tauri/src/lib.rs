@@ -3,17 +3,20 @@ mod db;
 mod github;
 mod notion;
 mod import;
+mod reflex;
 
 use agent::bridge::PiBridge;
 use agent::types::{CreateSessionRequest, ForkResult, ForkableMessage, SessionMessage, SessionState};
+use reflex::{AnalyzeRequest, Annotation, ReflexEngine};
 use serde::{Deserialize, Serialize};
 use db::store::{self, AssembledContext, ContextSet, ContextSetItem, CreateContextSet, CreateContextSetItem, CreateNote, CreateNoteContext, Note, NoteContext, NoteFilter, NoteLink, Tag, UpdateContextSet, UpdateNote};
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager, State};
 struct AppState {
     db: Mutex<rusqlite::Connection>,
     pi: PiBridge,
+    reflex: Arc<ReflexEngine>,
     /// Active event forwarders (session_id → abort sender to stop forwarding)
     event_forwarders: Mutex<HashMap<String, tokio::sync::oneshot::Sender<()>>>,
 }
@@ -387,6 +390,33 @@ async fn notion_get_page(
     notion::get_page_content(&token, &page_id).await
 }
 
+// ── Reflex Commands ────────────────────────────────────────────────────
+
+#[tauri::command]
+async fn reflex_analyze_paragraph(
+    state: State<'_, AppState>,
+    request: AnalyzeRequest,
+) -> Result<Vec<Annotation>, String> {
+    Ok(state.reflex.analyze_paragraph(request).await)
+}
+
+#[tauri::command]
+fn reflex_toggle(state: State<'_, AppState>, enabled: bool) -> Result<bool, String> {
+    state.reflex.set_enabled(enabled);
+    Ok(state.reflex.is_enabled())
+}
+
+#[tauri::command]
+fn reflex_is_enabled(state: State<'_, AppState>) -> Result<bool, String> {
+    Ok(state.reflex.is_enabled())
+}
+
+#[tauri::command]
+fn reflex_invalidate_cache(state: State<'_, AppState>) -> Result<(), String> {
+    state.reflex.invalidate_cache();
+    Ok(())
+}
+
 // ── Pi Agent Commands ──────────────────────────────────────────────────
 
 #[tauri::command]
@@ -568,10 +598,12 @@ pub fn run() {
                 .map_err(|e| e.to_string())?;
 
             let pi_bridge = PiBridge::new();
+            let reflex_engine = Arc::new(ReflexEngine::new(pi_bridge.clone()));
 
             handle.manage(AppState {
                 db: Mutex::new(conn),
                 pi: pi_bridge,
+                reflex: reflex_engine,
                 event_forwarders: Mutex::new(HashMap::new()),
             });
 
@@ -621,6 +653,10 @@ pub fn run() {
             notion_clear_token,
             notion_search,
             notion_get_page,
+            reflex_analyze_paragraph,
+            reflex_toggle,
+            reflex_is_enabled,
+            reflex_invalidate_cache,
             pi_create_session,
             pi_prompt,
             pi_steer,
